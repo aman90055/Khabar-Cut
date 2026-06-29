@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # Next.js Web Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: khabar_cut_app
+    restart: always
+    ports:
+      - '3000:3000'
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db_master:5432/khabarcut?schema=public
+      - DIRECT_URL=postgresql://postgres:postgres@db_master:5432/khabarcut?schema=public
+      - NEXT_PUBLIC_SUPABASE_URL=https://wpqpcdqgovgflrpusgkx.supabase.co
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_yBvNKWw7Tcaewpn8qUJlAQ_qCIcU86c
+      - NODE_ENV=production
+    depends_on:
+      - db_master
+      - redis_cache
+
+  # Primary Database (Master)
+  db_master:
+    image: postgres:15-alpine
+    container_name: khabar_cut_db_master
+    restart: always
+    environment:
+      - POSTGRES_DB=khabarcut
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_master_data:/var/lib/postgresql/data
+
+  # Read Replica Database
+  db_replica:
+    image: postgres:15-alpine
+    container_name: khabar_cut_db_replica
+    restart: always
+    environment:
+      - POSTGRES_DB=khabarcut
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      - db_master
+    volumes:
+      - pg_replica_data:/var/lib/postgresql/data
+
+  # Redis Cache Layer (Edge Caching Mock)
+  redis_cache:
+    image: redis:7-alpine
+    container_name: khabar_cut_redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+
+volumes:
+  pg_master_data:
+  pg_replica_data:
+  redis_data:

@@ -1,0 +1,1686 @@
+// ============================================================================
+// Khabar Cut News — Enterprise News Platform
+// Prisma Schema (PostgreSQL)
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum ArticleStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SPAM
+}
+
+enum AdType {
+  BANNER
+  SIDEBAR
+  INLINE
+  POPUP
+  NATIVE
+}
+
+enum AdPosition {
+  HEADER
+  SIDEBAR
+  ARTICLE_TOP
+  ARTICLE_BOTTOM
+  ARTICLE_INLINE
+  FOOTER
+  POPUP
+}
+
+enum NotificationType {
+  ARTICLE_PUBLISHED
+  COMMENT_RECEIVED
+  COMMENT_APPROVED
+  ROLE_CHANGED
+  SYSTEM
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+}
+
+enum ArticleVisibility {
+  PUBLIC
+  PRIVATE
+  SUBSCRIBERS_ONLY
+}
+
+enum LiveBlogStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum WebStoryStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum VideoStatus {
+  DRAFT
+  PROCESSING
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NewsletterStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+// ============================================================================
+// Auth & RBAC
+// ============================================================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  fullName     String    @map("full_name")
+  avatarUrl    String?   @map("avatar_url")
+  phone        String?
+  bio          String?
+  authProvider String    @map("auth_provider")
+  authId       String    @unique @map("auth_id")
+  roleId       String    @map("role_id")
+  isActive     Boolean   @default(true) @map("is_active")
+  isVerified   Boolean   @default(false) @map("is_verified")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  role          Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  articles      Article[]
+  comments      Comment[]
+  bookmarks     Bookmark[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  media         Media[]
+  author        Author?
+
+  @@index([email])
+  @@index([authId])
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  level       Int
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@index([level])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  roles RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String   @map("role_id")
+  permissionId String   @map("permission_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================================
+// Content
+// ============================================================================
+
+model Article {
+  id              String            @id @default(uuid())
+  title           String
+  slug            String            @unique
+  excerpt         String?
+  content         Json?
+  featuredImageId String?           @map("featured_image_id")
+  categoryId      String?           @map("category_id")
+  authorId        String            @map("author_id")
+  status          ArticleStatus     @default(DRAFT)
+  visibility      ArticleVisibility @default(PUBLIC)
+  priority        Int               @default(0)
+  isFeatured      Boolean           @default(false) @map("is_featured")
+  isBreaking      Boolean           @default(false) @map("is_breaking")
+  publishedAt     DateTime?         @map("published_at")
+  scheduledAt     DateTime?         @map("scheduled_at")
+  wordCount       Int?              @map("word_count")
+  readingTime     Int?              @map("reading_time")
+  viewCount       BigInt            @default(0) @map("view_count")
+  stateId         String?           @map("state_id")
+  districtId      String?           @map("district_id")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  category      Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author        User          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  featuredImage Media?        @relation(fields: [featuredImageId], references: [id], onDelete: SetNull)
+  state         State?        @relation(fields: [stateId], references: [id], onDelete: SetNull)
+  district      District?     @relation(fields: [districtId], references: [id], onDelete: SetNull)
+  tags          ArticleTag[]
+  comments      Comment[]
+  seoMetadata   SeoMetadata[]
+  bookmarks     Bookmark[]
+  breakingNews  BreakingNews[]
+  analytics     Analytics[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([status, publishedAt])
+  @@index([publishedAt(sort: Desc)])
+  @@index([stateId])
+  @@index([districtId])
+  @@map("articles")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  parentId    String?  @map("parent_id")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+  articles Article[]
+  videos   Video[]
+
+  @@index([slug])
+  @@index([parentId])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model Tag {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  articles ArticleTag[]
+
+  @@map("tags")
+}
+
+model ArticleTag {
+  id        String   @id @default(uuid())
+  articleId String   @map("article_id")
+  tagId     String   @map("tag_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, tagId])
+  @@map("article_tags")
+}
+
+// ============================================================================
+// Media
+// ============================================================================
+
+model Media {
+  id           String    @id @default(uuid())
+  filename     String
+  originalName String    @map("original_name")
+  mimeType     String    @map("mime_type")
+  size         BigInt
+  width        Int?
+  height       Int?
+  url          String
+  thumbnailUrl String?   @map("thumbnail_url")
+  altText      String?   @map("alt_text")
+  caption      String?
+  storagePath  String    @map("storage_path")
+  bucket       String
+  uploadedById String    @map("uploaded_by_id")
+  type         MediaType
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  uploadedBy User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  articles   Article[]
+
+  @@index([uploadedById])
+  @@index([type])
+  @@index([createdAt])
+  @@map("media")
+}
+
+// ============================================================================
+// Engagement
+// ============================================================================
+
+model Comment {
+  id        String        @id @default(uuid())
+  content   String
+  articleId String        @map("article_id")
+  userId    String        @map("user_id")
+  parentId  String?       @map("parent_id")
+  status    CommentStatus @default(PENDING)
+  ipAddress String?       @map("ip_address")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  deletedAt DateTime?     @map("deleted_at")
+
+  article Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: SetNull)
+  replies Comment[] @relation("CommentThread")
+
+  @@index([articleId])
+  @@index([userId])
+  @@index([parentId])
+  @@index([status])
+  @@map("comments")
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  articleId String   @map("article_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId])
+  @@map("bookmarks")
+}
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  deletedAt DateTime?        @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================================================
+// Advertising
+// ============================================================================
+
+model Advertisement {
+  id          String     @id @default(uuid())
+  title       String
+  type        AdType
+  content     String?
+  targetUrl   String?    @map("target_url")
+  imageUrl    String?    @map("image_url")
+  startDate   DateTime   @map("start_date")
+  endDate     DateTime   @map("end_date")
+  isActive    Boolean    @default(true) @map("is_active")
+  impressions BigInt     @default(0)
+  clicks      BigInt     @default(0)
+  position    AdPosition
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  deletedAt   DateTime?  @map("deleted_at")
+
+  @@index([isActive, position])
+  @@index([startDate, endDate])
+  @@map("advertisements")
+}
+
+// ============================================================================
+// Analytics & Audit
+// ============================================================================
+
+model Analytics {
+  id         String   @id @default(uuid())
+  articleId  String?  @map("article_id")
+  pagePath   String   @map("page_path")
+  eventType  String   @map("event_type")
+  referrer   String?
+  userAgent  String?  @map("user_agent")
+  ipHash     String?  @map("ip_hash")
+  country    String?
+  region     String?
+  deviceType String?  @map("device_type")
+  sessionId  String?  @map("session_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  article Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([articleId, createdAt])
+  @@index([pagePath])
+  @@index([createdAt])
+  @@map("analytics")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// Sessions
+// ============================================================================
+
+model Session {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  tokenHash    String    @unique @map("token_hash")
+  deviceInfo   Json?     @map("device_info")
+  ipAddress    String?   @map("ip_address")
+  expiresAt    DateTime  @map("expires_at")
+  lastActiveAt DateTime  @default(now()) @map("last_active_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// Author Profiles
+// ============================================================================
+
+model Author {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  displayName String   @map("display_name")
+  slug        String   @unique
+  bio         String?
+  avatarUrl   String?  @map("avatar_url")
+  socialLinks Json?    @map("social_links")
+  isVerified  Boolean  @default(false) @map("is_verified")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webStories WebStory[]
+  videos     Video[]
+  liveBlogs  LiveBlog[]
+  liveBlogEntries LiveBlogEntry[]
+
+  @@index([slug])
+  @@index([userId])
+  @@map("authors")
+}
+
+// ============================================================================
+// Geography
+// ============================================================================
+
+model State {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  code      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  districts District[]
+  articles  Article[]
+
+  @@map("states")
+}
+
+model District {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  stateId   String   @map("state_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  state    State     @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  articles Article[]
+
+  @@index([slug])
+  @@index([stateId])
+  @@index([stateId, slug])
+  @@map("districts")
+}
+
+// ============================================================================
+// Breaking News
+// ============================================================================
+
+model BreakingNews {
+  id        String    @id @default(uuid())
+  title     String
+  articleId String?   @map("article_id")
+  isActive  Boolean   @default(true) @map("is_active")
+  priority  Int       @default(0)
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  article Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([isActive, priority])
+  @@index([expiresAt])
+  @@map("breaking_news")
+}
+
+// ============================================================================
+// Web Stories
+// ============================================================================
+
+model WebStory {
+  id          String         @id @default(uuid())
+  title       String
+  slug        String         @unique
+  coverImage  String?        @map("cover_image")
+  slides      Json
+  authorId    String         @map("author_id")
+  status      WebStoryStatus @default(DRAFT)
+  publishedAt DateTime?      @map("published_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  deletedAt   DateTime?      @map("deleted_at")
+
+  author Author @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([slug])
+  @@index([status])
+  @@index([authorId])
+  @@map("web_stories")
+}
+
+// ============================================================================
+// Videos
+// ============================================================================
+
+model Video {
+  id           String      @id @default(uuid())
+  title        String
+  slug         String      @unique
+  description  String?
+  videoUrl     String      @map("video_url")
+  thumbnailUrl String?     @map("thumbnail_url")
+  duration     Int?
+  categoryId   String?     @map("category_id")
+  authorId     String      @map("author_id")
+  status       VideoStatus @default(DRAFT)
+  viewCount    BigInt      @default(0) @map("view_count")
+  isFeatured   Boolean     @default(false) @map("is_featured")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  deletedAt    DateTime?   @map("deleted_at")
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author   Author    @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([slug])
+  @@index([status])
+  @@index([categoryId])
+  @@map("videos")
+}
+
+// ============================================================================
+// Live Blogs
+// ============================================================================
+
+model LiveBlog {
+  id          String         @id @default(uuid())
+  title       String
+  slug        String         @unique
+  description String?
+  authorId    String         @map("author_id")
+  status      LiveBlogStatus @default(ACTIVE)
+  startedAt   DateTime       @default(now()) @map("started_at")
+  endedAt     DateTime?      @map("ended_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  deletedAt   DateTime?      @map("deleted_at")
+
+  author  Author          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  entries LiveBlogEntry[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("live_blogs")
+}
+
+model LiveBlogEntry {
+  id         String   @id @default(uuid())
+  liveBlogId String   @map("live_blog_id")
+  content    Json
+  authorId   String   @map("author_id")
+  isPinned   Boolean  @default(false) @map("is_pinned")
+  entryType  String   @default("update") @map("entry_type")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  liveBlog LiveBlog @relation(fields: [liveBlogId], references: [id], onDelete: Cascade)
+  author   Author   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([liveBlogId, createdAt])
+  @@map("live_blog_entries")
+}
+
+// ============================================================================
+// SEO
+// ============================================================================
+
+model SeoMetadata {
+  id               String   @id @default(uuid())
+  entityType       String   @map("entity_type")
+  entityId         String   @map("entity_id")
+  metaTitle        String?  @map("meta_title")
+  metaDescription  String?  @map("meta_description")
+  canonicalUrl     String?  @map("canonical_url")
+  ogTitle          String?  @map("og_title")
+  ogDescription    String?  @map("og_description")
+  ogImage          String?  @map("og_image")
+  twitterTitle     String?  @map("twitter_title")
+  twitterDescription String? @map("twitter_description")
+  focusKeyword     String?  @map("focus_keyword")
+  schemaMarkup     Json?    @map("schema_markup")
+  noIndex          Boolean  @default(false) @map("no_index")
+  noFollow         Boolean  @default(false) @map("no_follow")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  article Article? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
+  @@map("seo_metadata")
+}
+
+// ============================================================================
+// Settings
+// ============================================================================
+
+model Setting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  group       String?
+  description String?
+  isPublic    Boolean  @default(false) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([group])
+  @@map("settings")
+}
+
+// ============================================================================
+// Subscribers & Newsletters
+// ============================================================================
+
+model Subscriber {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  name           String?
+  status         String    @default("pending")
+  confirmedAt    DateTime? @map("confirmed_at")
+  unsubscribedAt DateTime? @map("unsubscribed_at")
+  preferences    Json?
+  source         String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  subscriptions NewsletterSubscription[]
+
+  @@index([status])
+  @@map("subscribers")
+}
+
+model Newsletter {
+  id             String           @id @default(uuid())
+  title          String
+  subject        String
+  content        Json?
+  status         NewsletterStatus @default(DRAFT)
+  sentAt         DateTime?        @map("sent_at")
+  recipientCount Int              @default(0) @map("recipient_count")
+  openCount      Int              @default(0) @map("open_count")
+  clickCount     Int              @default(0) @map("click_count")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  deletedAt      DateTime?        @map("deleted_at")
+
+  subscriptions NewsletterSubscription[]
+
+  @@index([status])
+  @@index([sentAt])
+  @@map("newsletters")
+}
+
+model NewsletterSubscription {
+  id           String    @id @default(uuid())
+  subscriberId String    @map("subscriber_id")
+  newsletterId String    @map("newsletter_id")
+  sentAt       DateTime? @map("sent_at")
+  openedAt     DateTime? @map("opened_at")
+  clickedAt    DateTime? @map("clicked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  subscriber Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  newsletter Newsletter @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriberId, newsletterId])
+  @@map("newsletter_subscriptions")
+}
+
+// ============================================================================
+// Revenue & Subscription System
+// ============================================================================
+
+enum SubscriptionBillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  LIFETIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  TRIAL
+  PAST_DUE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  RAZORPAY
+  CASHFREE
+  UPI
+  CARD
+  NET_BANKING
+  INTERNATIONAL
+}
+
+enum PaymentFor {
+  SUBSCRIPTION
+  AD_CAMPAIGN
+  PRESS_RELEASE
+  MARKETPLACE
+  BUSINESS_LISTING
+  SERVICE
+}
+
+model SubscriptionPlan {
+  id              String                  @id @default(uuid())
+  name            String
+  slug            String                  @unique
+  description     String?
+  price           Decimal                 @db.Decimal(10, 2)
+  currency        String                  @default("INR")
+  billingCycle    SubscriptionBillingCycle @map("billing_cycle")
+  trialDays       Int                     @default(0) @map("trial_days")
+  isActive        Boolean                 @default(true) @map("is_active")
+  isFeatured      Boolean                 @default(false) @map("is_featured")
+  features        Json                    // array of feature strings
+  adFree          Boolean                 @default(false) @map("ad_free")
+  exclusiveContent Boolean               @default(false) @map("exclusive_content")
+  premiumVideos   Boolean                 @default(false) @map("premium_videos")
+  premiumNewsletter Boolean              @default(false) @map("premium_newsletter")
+  sortOrder       Int                     @default(0) @map("sort_order")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  deletedAt       DateTime?               @map("deleted_at")
+
+  subscriptions UserSubscription[]
+
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model UserSubscription {
+  id                    String               @id @default(uuid())
+  userId                String               @map("user_id")
+  planId                String               @map("plan_id")
+  status                SubscriptionStatus   @default(TRIAL)
+  startDate             DateTime             @map("start_date")
+  endDate               DateTime             @map("end_date")
+  trialEndDate          DateTime?            @map("trial_end_date")
+  autoRenew             Boolean              @default(true) @map("auto_renew")
+  razorpaySubscriptionId String?             @map("razorpay_subscription_id")
+  cashfreeSubscriptionId String?             @map("cashfree_subscription_id")
+  cancelledAt           DateTime?            @map("cancelled_at")
+  cancelReason          String?              @map("cancel_reason")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  deletedAt             DateTime?            @map("deleted_at")
+
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@index([userId, status])
+  @@index([planId])
+  @@index([endDate])
+  @@map("user_subscriptions")
+}
+
+model Payment {
+  id                   String         @id @default(uuid())
+  userId               String?        @map("user_id")
+  amount               Decimal        @db.Decimal(10, 2)
+  currency             String         @default("INR")
+  status               PaymentStatus  @default(PENDING)
+  method               PaymentMethod?
+  paymentFor           PaymentFor     @map("payment_for")
+  referenceId          String?        @map("reference_id") // subscription/campaign/etc ID
+  gatewayOrderId       String?        @map("gateway_order_id")
+  gatewayPaymentId     String?        @map("gateway_payment_id")
+  gatewaySignature     String?        @map("gateway_signature")
+  gatewayResponse      Json?          @map("gateway_response")
+  subscriptionId       String?        @map("subscription_id")
+  gstAmount            Decimal?       @db.Decimal(10, 2) @map("gst_amount")
+  gstRate              Decimal?       @db.Decimal(5, 2) @map("gst_rate")
+  notes                String?
+  refundedAt           DateTime?      @map("refunded_at")
+  refundAmount         Decimal?       @db.Decimal(10, 2) @map("refund_amount")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  deletedAt            DateTime?      @map("deleted_at")
+
+  subscription UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoice      Invoice?
+
+  @@index([userId, status])
+  @@index([paymentFor])
+  @@index([createdAt])
+  @@index([status])
+  @@map("payments")
+}
+
+model Invoice {
+  id              String    @id @default(uuid())
+  paymentId       String    @unique @map("payment_id")
+  invoiceNumber   String    @unique @map("invoice_number")
+  buyerName       String    @map("buyer_name")
+  buyerEmail      String    @map("buyer_email")
+  buyerPhone      String?   @map("buyer_phone")
+  buyerAddress    String?   @map("buyer_address")
+  buyerGst        String?   @map("buyer_gst")
+  sellerName      String    @default("Khabar Cut Media Pvt. Ltd.") @map("seller_name")
+  sellerGst       String?   @map("seller_gst")
+  items           Json      // line items
+  subtotal        Decimal   @db.Decimal(10, 2)
+  gstAmount       Decimal   @db.Decimal(10, 2) @map("gst_amount")
+  totalAmount     Decimal   @db.Decimal(10, 2) @map("total_amount")
+  currency        String    @default("INR")
+  issueDate       DateTime  @map("issue_date")
+  dueDate         DateTime? @map("due_date")
+  pdfUrl          String?   @map("pdf_url")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceNumber])
+  @@index([buyerEmail])
+  @@map("invoices")
+}
+
+// ============================================================================
+// Advertiser & Campaign Management
+// ============================================================================
+
+enum AdvertiserStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+  REJECTED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum AdSlotPosition {
+  HOME_HERO
+  HOME_SIDEBAR
+  HOME_BELOW_BREAKING
+  CATEGORY_TOP
+  CATEGORY_SIDEBAR
+  ARTICLE_TOP
+  ARTICLE_MIDDLE
+  ARTICLE_BOTTOM
+  ARTICLE_SIDEBAR
+  STICKY_FOOTER
+  STICKY_SIDEBAR
+  WEB_STORY
+  LIVE_BLOG
+  SEARCH_PAGE
+  AUTHOR_PAGE
+  PAGE_404
+  NEWSLETTER_INLINE
+  VIDEO_PRE_ROLL
+  VIDEO_MID_ROLL
+}
+
+enum AdNetworkProvider {
+  ADSENSE
+  ADSTERRA
+  MEDIA_NET
+  TABOOLA
+  OUTBRAIN
+  MGID
+  DIRECT
+}
+
+model Advertiser {
+  id              String           @id @default(uuid())
+  companyName     String           @map("company_name")
+  contactName     String           @map("contact_name")
+  email           String           @unique
+  phone           String?
+  website         String?
+  gstNumber       String?          @map("gst_number")
+  panNumber       String?          @map("pan_number")
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  status          AdvertiserStatus @default(PENDING)
+  totalSpend      Decimal          @default(0) @db.Decimal(12, 2) @map("total_spend")
+  totalImpressions BigInt          @default(0) @map("total_impressions")
+  totalClicks     BigInt           @default(0) @map("total_clicks")
+  logoUrl         String?          @map("logo_url")
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  deletedAt       DateTime?        @map("deleted_at")
+
+  campaigns AdCampaign[]
+
+  @@index([status])
+  @@index([email])
+  @@map("advertisers")
+}
+
+model AdSlot {
+  id            String         @id @default(uuid())
+  name          String
+  position      AdSlotPosition @unique
+  description   String?
+  width         Int?
+  height        Int?
+  isActive      Boolean        @default(true) @map("is_active")
+  isPremium     Boolean        @default(false) @map("is_premium")
+  pricePerDay   Decimal?       @db.Decimal(10, 2) @map("price_per_day")
+  pricePerWeek  Decimal?       @db.Decimal(10, 2) @map("price_per_week")
+  pricePerMonth Decimal?       @db.Decimal(10, 2) @map("price_per_month")
+  networkCode   String?        @map("network_code")  // AdSense slot code etc.
+  networkProvider AdNetworkProvider? @map("network_provider")
+  fillRate      Decimal?       @db.Decimal(5, 2) @map("fill_rate")
+  avgCtr        Decimal?       @db.Decimal(5, 4) @map("avg_ctr")
+  avgCpm        Decimal?       @db.Decimal(10, 2) @map("avg_cpm")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  deletedAt     DateTime?      @map("deleted_at")
+
+  campaigns AdCampaign[]
+
+  @@map("ad_slots")
+}
+
+model AdCampaign {
+  id            String         @id @default(uuid())
+  advertiserId  String         @map("advertiser_id")
+  slotId        String?        @map("slot_id")
+  name          String
+  status        CampaignStatus @default(DRAFT)
+  budget        Decimal        @db.Decimal(12, 2)
+  spent         Decimal        @default(0) @db.Decimal(12, 2)
+  startDate     DateTime       @map("start_date")
+  endDate       DateTime       @map("end_date")
+  targetStates  Json?          @map("target_states")   // array of state codes
+  targetDevices Json?          @map("target_devices")  // desktop/mobile/tablet
+  impressions   BigInt         @default(0)
+  clicks        BigInt         @default(0)
+  conversions   BigInt         @default(0)
+  ctr           Decimal?       @db.Decimal(5, 4)
+  cpm           Decimal?       @db.Decimal(10, 2)
+  notes         String?
+  rejectedReason String?       @map("rejected_reason")
+  approvedAt    DateTime?      @map("approved_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  deletedAt     DateTime?      @map("deleted_at")
+
+  advertiser Advertiser   @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  slot       AdSlot?      @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  creatives  AdCreative[]
+
+  @@index([advertiserId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("ad_campaigns")
+}
+
+model AdCreative {
+  id          String    @id @default(uuid())
+  campaignId  String    @map("campaign_id")
+  name        String
+  type        String    // BANNER | VIDEO | NATIVE | HTML
+  fileUrl     String    @map("file_url")
+  clickUrl    String    @map("click_url")
+  altText     String?   @map("alt_text")
+  width       Int?
+  height      Int?
+  fileSize    BigInt?   @map("file_size")
+  duration    Int?      // seconds for video
+  isApproved  Boolean   @default(false) @map("is_approved")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  campaign AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("ad_creatives")
+}
+
+// ============================================================================
+// Revenue Snapshots (for fast dashboard queries)
+// ============================================================================
+
+model RevenueSnapshot {
+  id            String    @id @default(uuid())
+  date          DateTime  @db.Date
+  source        String    // adsense | adsterra | direct | subscription | press_release | marketplace
+  country       String?
+  state         String?
+  deviceType    String?   @map("device_type")
+  categorySlug  String?   @map("category_slug")
+  revenue       Decimal   @db.Decimal(12, 4)
+  impressions   BigInt    @default(0)
+  clicks        BigInt    @default(0)
+  rpm           Decimal?  @db.Decimal(10, 4)
+  ctr           Decimal?  @db.Decimal(5, 4)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([date, source, country, state, deviceType, categorySlug])
+  @@index([date])
+  @@index([source])
+  @@map("revenue_snapshots")
+}
+
+// ============================================================================
+// Press Release System
+// ============================================================================
+
+enum PressReleaseStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PUBLISHED
+  REJECTED
+  PAYMENT_PENDING
+}
+
+model PressRelease {
+  id              String             @id @default(uuid())
+  title           String
+  content         Json
+  companyName     String             @map("company_name")
+  contactName     String             @map("contact_name")
+  contactEmail    String             @map("contact_email")
+  contactPhone    String?            @map("contact_phone")
+  mediaUrls       Json?              @map("media_urls")  // array of file URLs
+  status          PressReleaseStatus @default(PAYMENT_PENDING)
+  price           Decimal            @db.Decimal(10, 2)
+  paymentId       String?            @map("payment_id")
+  publishedAt     DateTime?          @map("published_at")
+  slug            String?            @unique
+  rejectedReason  String?            @map("rejected_reason")
+  reviewNote      String?            @map("review_note")
+  seoTitle        String?            @map("seo_title")
+  seoDescription  String?            @map("seo_description")
+  distribution    Json?              // channels it was distributed to
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  deletedAt       DateTime?          @map("deleted_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("press_releases")
+}
+
+// ============================================================================
+// Business Directory & Marketplace
+// ============================================================================
+
+enum ListingStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+model BusinessListing {
+  id             String        @id @default(uuid())
+  businessName   String        @map("business_name")
+  slug           String        @unique
+  description    String?
+  category       String?
+  subCategory    String?       @map("sub_category")
+  email          String?
+  phone          String?
+  website        String?
+  address        String?
+  city           String?
+  state          String?
+  pincode        String?
+  country        String        @default("India")
+  latitude       Decimal?      @db.Decimal(10, 8)
+  longitude      Decimal?      @db.Decimal(11, 8)
+  logoUrl        String?       @map("logo_url")
+  coverImageUrl  String?       @map("cover_image_url")
+  images         Json?
+  socialLinks    Json?         @map("social_links")
+  isVerified     Boolean       @default(false) @map("is_verified")
+  isFeatured     Boolean       @default(false) @map("is_featured")
+  isPremium      Boolean       @default(false) @map("is_premium")
+  status         ListingStatus @default(PENDING)
+  rating         Decimal?      @db.Decimal(3, 2)
+  reviewCount    Int           @default(0) @map("review_count")
+  viewCount      BigInt        @default(0) @map("view_count")
+  tags           Json?
+  paymentId      String?       @map("payment_id")
+  expiresAt      DateTime?     @map("expires_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  deletedAt      DateTime?     @map("deleted_at")
+
+  @@index([status])
+  @@index([city, state])
+  @@index([isVerified, isFeatured])
+  @@map("business_listings")
+}
+
+enum MarketplaceOrderStatus {
+  PENDING
+  PAYMENT_PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+model MarketplaceOrder {
+  id            String                 @id @default(uuid())
+  userId        String?                @map("user_id")
+  serviceType   String                 @map("service_type") // instagram | youtube | election | event | startup | branding | etc.
+  packageName   String                 @map("package_name")
+  description   String?
+  requirements  Json?                  // custom requirements from buyer
+  price         Decimal                @db.Decimal(10, 2)
+  currency      String                 @default("INR")
+  status        MarketplaceOrderStatus @default(PENDING)
+  paymentId     String?                @map("payment_id")
+  deliverables  Json?                  // delivered files, links etc.
+  deliveredAt   DateTime?              @map("delivered_at")
+  notes         String?
+  adminNotes    String?                @map("admin_notes")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+  deletedAt     DateTime?              @map("deleted_at")
+
+  @@index([status])
+  @@index([serviceType])
+  @@map("marketplace_orders")
+}
+
+// ============================================================================
+// Lead Management CRM
+// ============================================================================
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+  DORMANT
+}
+
+enum LeadSource {
+  WEBSITE
+  REFERRAL
+  COLD_CALL
+  EMAIL
+  SOCIAL_MEDIA
+  ADVERTISEMENT
+  EVENT
+  PARTNER
+  OTHER
+}
+
+model Lead {
+  id            String     @id @default(uuid())
+  name          String
+  email         String?
+  phone         String?
+  company       String?
+  designation   String?
+  source        LeadSource @default(WEBSITE)
+  status        LeadStatus @default(NEW)
+  pipelineStage Int        @default(0) @map("pipeline_stage") // 0-6 mapped to LeadStatus
+  value         Decimal?   @db.Decimal(12, 2)
+  currency      String     @default("INR")
+  assignedTo    String?    @map("assigned_to") // User ID
+  tags          Json?
+  city          String?
+  state         String?
+  notes         String?
+  lastContactedAt DateTime? @map("last_contacted_at")
+  expectedCloseAt DateTime? @map("expected_close_at")
+  closedAt      DateTime?  @map("closed_at")
+  lostReason    String?    @map("lost_reason")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  deletedAt     DateTime?  @map("deleted_at")
+
+  notes_list   LeadNote[]
+  followups    LeadFollowUp[]
+
+  @@index([status])
+  @@index([assignedTo])
+  @@index([source])
+  @@map("leads")
+}
+
+enum LeadNoteType {
+  GENERAL
+  CALL
+  EMAIL
+  WHATSAPP
+  MEETING
+}
+
+model LeadNote {
+  id        String       @id @default(uuid())
+  leadId    String       @map("lead_id")
+  authorId  String       @map("author_id") // User ID
+  type      LeadNoteType @default(GENERAL)
+  content   String
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  deletedAt DateTime?    @map("deleted_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@map("lead_notes")
+}
+
+model LeadFollowUp {
+  id          String    @id @default(uuid())
+  leadId      String    @map("lead_id")
+  assignedTo  String    @map("assigned_to")
+  dueAt       DateTime  @map("due_at")
+  title       String
+  description String?
+  isDone      Boolean   @default(false) @map("is_done")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([assignedTo, isDone])
+  @@index([dueAt])
+  @@map("lead_followups")
+}
+
+// ============================================================================
+// Affiliate System
+// ============================================================================
+
+enum AffiliateWithdrawalStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+model AffiliateProfile {
+  id             String    @id @default(uuid())
+  userId         String    @unique @map("user_id")
+  referralCode   String    @unique @map("referral_code")
+  commissionRate Decimal   @default(10) @db.Decimal(5, 2) @map("commission_rate") // percentage
+  totalEarned    Decimal   @default(0) @db.Decimal(12, 2) @map("total_earned")
+  totalPaid      Decimal   @default(0) @db.Decimal(12, 2) @map("total_paid")
+  pendingBalance Decimal   @default(0) @db.Decimal(12, 2) @map("pending_balance")
+  bankName       String?   @map("bank_name")
+  accountNumber  String?   @map("account_number")
+  ifscCode       String?   @map("ifsc_code")
+  upiId          String?   @map("upi_id")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  conversions AffiliateConversion[]
+  withdrawals AffiliateWithdrawal[]
+
+  @@index([referralCode])
+  @@map("affiliate_profiles")
+}
+
+model AffiliateConversion {
+  id             String   @id @default(uuid())
+  affiliateId    String   @map("affiliate_id")
+  paymentId      String   @map("payment_id")
+  convertedUserId String? @map("converted_user_id")
+  conversionType String   @map("conversion_type") // subscription | ad_campaign | marketplace
+  orderValue     Decimal  @db.Decimal(12, 2) @map("order_value")
+  commission     Decimal  @db.Decimal(12, 2)
+  isPaid         Boolean  @default(false) @map("is_paid")
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId])
+  @@map("affiliate_conversions")
+}
+
+model AffiliateWithdrawal {
+  id          String                    @id @default(uuid())
+  affiliateId String                    @map("affiliate_id")
+  amount      Decimal                   @db.Decimal(12, 2)
+  method      String                    // bank | upi
+  status      AffiliateWithdrawalStatus @default(PENDING)
+  notes       String?
+  processedAt DateTime?                 @map("processed_at")
+  transactionId String?                 @map("transaction_id")
+  createdAt   DateTime                  @default(now()) @map("created_at")
+  updatedAt   DateTime                  @updatedAt @map("updated_at")
+  deletedAt   DateTime?                 @map("deleted_at")
+
+  affiliate AffiliateProfile @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId, status])
+  @@map("affiliate_withdrawals")
+}
+
+// ============================================================================
+// Push Notification System
+// ============================================================================
+
+enum PushCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+model PushSubscription {
+  id           String    @id @default(uuid())
+  endpoint     String    @unique
+  p256dh       String    @map("p256dh")
+  auth         String
+  userId       String?   @map("user_id")
+  deviceType   String?   @map("device_type") // browser | android | ios
+  browser      String?
+  country      String?
+  state        String?
+  isActive     Boolean   @default(true) @map("is_active")
+  subscribedAt DateTime  @default(now()) @map("subscribed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@index([isActive])
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model PushCampaign {
+  id              String             @id @default(uuid())
+  title           String
+  body            String
+  iconUrl         String?            @map("icon_url")
+  imageUrl        String?            @map("image_url")
+  clickUrl        String?            @map("click_url")
+  targetAudience  String             @default("all") @map("target_audience") // all | subscribers | states
+  targetStates    Json?              @map("target_states")
+  targetDevices   Json?              @map("target_devices")
+  status          PushCampaignStatus @default(DRAFT)
+  scheduledAt     DateTime?          @map("scheduled_at")
+  sentAt          DateTime?          @map("sent_at")
+  totalSent       Int                @default(0) @map("total_sent")
+  totalDelivered  Int                @default(0) @map("total_delivered")
+  totalClicked    Int                @default(0) @map("total_clicked")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  deletedAt       DateTime?          @map("deleted_at")
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("push_campaigns")
+}
+
+// ============================================================================
+// Global Bureau & Correspondent Management
+// ============================================================================
+
+enum BureauType {
+  HEADQUARTERS
+  REGIONAL
+  NATIONAL
+  FOREIGN_OFFICE
+}
+
+model Bureau {
+  id          String         @id @default(uuid())
+  name        String
+  code        String         @unique // e.g. NY_BUREAU, LDN_BUREAU
+  type        BureauType     @default(REGIONAL)
+  country     String
+  city        String
+  timezone    String         @default("UTC")
+  address     String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  deletedAt   DateTime?      @map("deleted_at")
+  members     BureauMember[]
+
+  @@map("bureaus")
+}
+
+enum BureauRole {
+  BUREAU_CHIEF
+  EDITOR
+  CORRESPONDENT
+  REPORTER
+  freelancer
+  freelancer_stringer
+}
+
+model BureauMember {
+  id        String     @id @default(uuid())
+  bureauId  String     @map("bureau_id")
+  userId    String     @map("user_id")
+  bureauRole BureauRole @default(REPORTER)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  bureau Bureau @relation(fields: [bureauId], references: [id], onDelete: Cascade)
+
+  @@unique([bureauId, userId])
+  @@map("bureau_members")
+}
+
+// ============================================================================
+// Internal Wire Service
+// ============================================================================
+
+enum WirePriority {
+  URGENT
+  FLASH
+  UPDATE
+  CORRECTION
+  EXCLUSIVE
+  EMBARGO
+}
+
+model WireItem {
+  id          String       @id @default(uuid())
+  title       String
+  content     String
+  priority    WirePriority @default(UPDATE)
+  source      String       @default("internal") // internal, reuters, ap, afp
+  embargoUntil DateTime?   @map("embargo_until")
+  language    String       @default("en")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+
+  @@index([priority])
+  @@index([createdAt])
+  @@map("wire_items")
+}
+
+// ============================================================================
+// Podcast Platform
+// ============================================================================
+
+model Podcast {
+  id          String           @id @default(uuid())
+  title       String
+  description String?
+  coverUrl    String?          @map("cover_url")
+  language    String           @default("en")
+  authorId    String           @map("author_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  deletedAt   DateTime?        @map("deleted_at")
+  episodes    PodcastEpisode[]
+
+  @@map("podcasts")
+}
+
+model PodcastEpisode {
+  id          String    @id @default(uuid())
+  podcastId   String    @map("podcast_id")
+  title       String
+  description String?
+  audioUrl    String    @map("audio_url")
+  duration    Int       @default(0) // in seconds
+  transcript  String?   @db.Text
+  aiSummary   String?   @map("ai_summary") @db.Text
+  downloadCount Int     @default(0) @map("download_count")
+  publishAt   DateTime  @default(now()) @map("publish_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  podcast Podcast @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+
+  @@index([podcastId])
+  @@map("podcast_episodes")
+}
+
+// ============================================================================
+// Live TV Channel & EPG
+// ============================================================================
+
+model LiveTVChannel {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  streamUrl   String       @map("stream_url")
+  logoUrl     String?      @map("logo_url")
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+  programs    EpgProgram[]
+
+  @@map("live_tv_channels")
+}
+
+model EpgProgram {
+  id          String    @id @default(uuid())
+  channelId   String    @map("channel_id")
+  title       String
+  description String?
+  startAt     DateTime  @map("start_at")
+  endAt       DateTime  @map("end_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  channel LiveTVChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+  @@index([startAt, endAt])
+  @@map("epg_programs")
+}
+
+// ============================================================================
+// Global User Settings & Preferences
+// ============================================================================
+
+model GlobalUserPreferences {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  currency       String   @default("USD")
+  timezone       String   @default("UTC")
+  language       String   @default("en")
+  savedFeedCount Int      @default(0) @map("saved_feed_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("global_user_preferences")
+}
+
+

@@ -1,0 +1,206 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { AuthService } from '@/server/services/auth-service';
+import { createAuditLog } from '@/middleware/audit';
+import { prisma } from '@/lib/prisma';
+import { 
+  loginSchema, 
+  registerSchema, 
+  otpSchema, 
+  forgotPasswordSchema, 
+  resetPasswordSchema,
+  changePasswordSchema 
+} from './schemas';
+import type { 
+  LoginInput, 
+  RegisterInput, 
+  OtpInput, 
+  ForgotPasswordInput, 
+  ResetPasswordInput,
+  ChangePasswordInput 
+} from './types';
+import { headers } from 'next/headers';
+
+export async function signInWithEmail(input: LoginInput) {
+  const validated = loginSchema.parse(input);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: validated.email,
+    password: validated.password,
+  });
+
+  if (error || !data.user || !data.session) {
+    throw new Error(error?.message || 'Authentication failed');
+  }
+
+  const dbUser = await AuthService.handleAuthCallback(data.user);
+
+  const headersList = await headers();
+  const userAgent = headersList.get('user-agent') || undefined;
+  const ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+
+  // Log session in DB
+  const session = await prisma.session.create({
+    data: {
+      userId: dbUser.id,
+      tokenHash: data.session.access_token,
+      expiresAt: new Date((data.session.expires_at ?? 0) * 1000),
+      ipAddress,
+      deviceInfo: userAgent ? { userAgent } : {},
+    },
+  });
+
+  await createAuditLog({
+    userId: dbUser.id,
+    action: 'USER_LOGIN',
+    entityType: 'session',
+    entityId: session.id,
+    newValues: { email: dbUser.email, ipAddress },
+  });
+
+  return { success: true, user: dbUser };
+}
+
+export async function signUp(input: RegisterInput) {
+  const validated = registerSchema.parse(input);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signUp({
+    email: validated.email,
+    password: validated.password,
+    options: {
+      data: {
+        full_name: validated.fullName,
+      },
+    },
+  });
+
+  if (error || !data.user) {
+    throw new Error(error?.message || 'Registration failed');
+  }
+
+  const dbUser = await AuthService.handleAuthCallback(data.user);
+
+  await createAuditLog({
+    userId: dbUser.id,
+    action: 'USER_REGISTER',
+    entityType: 'user',
+    entityId: dbUser.id,
+    newValues: { email: dbUser.email },
+  });
+
+  return { success: true, user: dbUser };
+}
+
+export async function signInWithOtp(input: ForgotPasswordInput) {
+  const validated = forgotPasswordSchema.parse(input);
+  const supabase = await createClient();
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: validated.email,
+    options: {
+      shouldCreateUser: true,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { success: true };
+}
+
+export async function verifyOtp(input: OtpInput) {
+  const validated = otpSchema.parse(input);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: validated.email,
+    token: validated.otp,
+    type: 'email',
+  });
+
+  if (error || !data.user) {
+    throw new Error(error?.message || 'OTP verification failed');
+  }
+
+  const dbUser = await AuthService.handleAuthCallback(data.user);
+
+  return { success: true, user: dbUser };
+}
+
+export async function signOut() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (user) {
+    const dbUser = await prisma.user.findUnique({
+      where: { authId: user.id },
+    });
+
+    if (dbUser) {
+      await prisma.session.updateMany({
+        where: { userId: dbUser.id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+
+      await createAuditLog({
+        userId: dbUser.id,
+        action: 'USER_LOGOUT',
+        entityType: 'user',
+        entityId: dbUser.id,
+      });
+    }
+  }
+
+  await supabase.auth.signOut();
+  return { success: true };
+}
+
+export async function forgotPassword(input: ForgotPasswordInput) {
+  const validated = forgotPasswordSchema.parse(input);
+  const supabase = await createClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(validated.email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/reset-password`,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { success: true };
+}
+
+export async function resetPassword(input: ResetPasswordInput) {
+  const validated = resetPasswordSchema.parse(input);
+  const supabase = await createClient();
+
+  const { error } = await supabase.auth.updateUser({
+    password: validated.password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { success: true };
+}
+
+export async function changePassword(input: ChangePasswordInput) {
+  const validated = changePasswordSchema.parse(input);
+  const supabase = await createClient();
+
+  // Supabase lets us update password of currently active session
+  const { error } = await supabase.auth.updateUser({
+    password: validated.newPassword,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { success: true };
+}
