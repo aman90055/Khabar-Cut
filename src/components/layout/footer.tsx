@@ -30,11 +30,14 @@ export function Footer() {
     <footer className="bg-zinc-950 text-zinc-400 border-t border-zinc-900">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="xl:grid xl:grid-cols-3 xl:gap-8">
-          {/* Brand section */}
-          <div className="space-y-8 xl:col-span-1">
-            <span className="text-3xl font-black tracking-tight text-white">
-              Khabar<span className="text-red-600">Cut</span>
-            </span>
+          <div className="space-y-6 xl:col-span-1">
+            <Link href="/" className="flex items-center gap-2">
+              <img
+                src="/logo.png"
+                alt="Khabar Cut News Logo"
+                className="h-14 w-auto object-contain dark:brightness-105"
+              />
+            </Link>
             <p className="text-sm text-zinc-400 max-w-xs">
               {siteConfig.description}
             </p>

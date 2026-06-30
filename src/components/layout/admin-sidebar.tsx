@@ -48,14 +48,17 @@ export function AdminSidebar() {
 
   return (
     <nav className="w-64 bg-zinc-950 border-r border-zinc-800 h-screen sticky top-0 flex flex-col">
-      {/* Brand */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-zinc-800 shrink-0">
-        <span className="text-xl font-black tracking-tight text-red-600 bg-zinc-900 px-2.5 py-1 rounded-lg">
-          KC
-        </span>
-        <span className="text-lg font-bold text-zinc-50 tracking-tight">
-          Khabar Cut
-        </span>
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-800 shrink-0">
+        <Link href="/" className="flex items-center gap-2">
+          <img
+            src="/logo.png"
+            alt="Khabar Cut Logo"
+            className="h-10 w-auto object-contain"
+          />
+          <span className="text-base font-bold text-zinc-50 tracking-tight">
+            Khabar Cut
+          </span>
+        </Link>
       </div>
 
       {/* Nav Items */}

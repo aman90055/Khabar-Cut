@@ -142,19 +142,12 @@ export function Header() {
           <div className="flex h-16 items-center justify-between gap-4">
 
             {/* ── Logo ── */}
-            <Link href="/" className="flex items-center gap-2.5 shrink-0 group" aria-label="Khabar Cut Home">
-              <div className="relative">
-                <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#D90429] text-white font-black text-sm tracking-tight shadow-lg shadow-red-500/30 group-hover:shadow-red-500/50 transition-shadow">
-                  KC
-                </span>
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#F6B100] rounded-full border-2 border-white dark:border-[#070C18]" />
-              </div>
-              <div className="hidden sm:flex flex-col leading-none">
-                <span className="text-[19px] font-black tracking-tight text-[#071330] dark:text-white">
-                  KHABAR<span className="text-[#D90429]"> CUT</span>
-                </span>
-                <span className="text-[9px] font-semibold text-gray-400 tracking-[0.15em] uppercase">India's Next Gen News</span>
-              </div>
+            <Link href="/" className="flex items-center gap-2 shrink-0" aria-label="Khabar Cut Home">
+              <img
+                src="/logo.png"
+                alt="Khabar Cut News Logo"
+                className="h-12 w-auto object-contain dark:brightness-105"
+              />
             </Link>
 
             {/* ── Desktop Navigation ── */}
