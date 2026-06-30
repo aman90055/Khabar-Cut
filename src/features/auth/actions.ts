@@ -37,9 +37,15 @@ export async function signInWithEmail(input: LoginInput) {
 
   const dbUser = await AuthService.handleAuthCallback(data.user);
 
-  const headersList = await headers();
-  const userAgent = headersList.get('user-agent') || undefined;
-  const ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+  let userAgent = 'unknown';
+  let ipAddress = '127.0.0.1';
+  try {
+    const headersList = await headers();
+    userAgent = headersList.get('user-agent') || 'unknown';
+    ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+  } catch (headerError) {
+    console.warn('⚠️ Could not extract headers for user login:', headerError);
+  }
 
   // Log session in DB
   const session = await prisma.session.create({
@@ -52,13 +58,17 @@ export async function signInWithEmail(input: LoginInput) {
     },
   });
 
-  await createAuditLog({
-    userId: dbUser.id,
-    action: 'USER_LOGIN',
-    entityType: 'session',
-    entityId: session.id,
-    newValues: { email: dbUser.email, ipAddress },
-  });
+  try {
+    await createAuditLog({
+      userId: dbUser.id,
+      action: 'USER_LOGIN',
+      entityType: 'session',
+      entityId: session.id,
+      newValues: { email: dbUser.email, ipAddress },
+    });
+  } catch (auditError) {
+    console.warn('⚠️ Failed to create audit log for user login:', auditError);
+  }
 
   return { success: true, user: dbUser };
 }
@@ -83,13 +93,17 @@ export async function signUp(input: RegisterInput) {
 
   const dbUser = await AuthService.handleAuthCallback(data.user);
 
-  await createAuditLog({
-    userId: dbUser.id,
-    action: 'USER_REGISTER',
-    entityType: 'user',
-    entityId: dbUser.id,
-    newValues: { email: dbUser.email },
-  });
+  try {
+    await createAuditLog({
+      userId: dbUser.id,
+      action: 'USER_REGISTER',
+      entityType: 'user',
+      entityId: dbUser.id,
+      newValues: { email: dbUser.email },
+    });
+  } catch (auditError) {
+    console.warn('⚠️ Failed to create audit log for user registration:', auditError);
+  }
 
   return { success: true, user: dbUser };
 }
