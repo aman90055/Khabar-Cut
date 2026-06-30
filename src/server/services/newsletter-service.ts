@@ -27,12 +27,16 @@ export class NewsletterService {
       },
     });
 
-    await createAuditLog({
-      action: 'SUBSCRIBE_NEWSLETTER',
-      entityType: 'subscriber',
-      entityId: subscriber.id,
-      newValues: JSON.parse(JSON.stringify(subscriber)),
-    });
+    try {
+      await createAuditLog({
+        action: 'SUBSCRIBE_NEWSLETTER',
+        entityType: 'subscriber',
+        entityId: subscriber.id,
+        newValues: JSON.parse(JSON.stringify(subscriber)),
+      });
+    } catch (auditError) {
+      console.warn('⚠️ Failed to create audit log for subscription:', auditError);
+    }
 
     return subscriber;
   }
