@@ -23,107 +23,119 @@ import type {
 import { headers } from 'next/headers';
 
 export async function signInWithEmail(input: LoginInput) {
-  const validated = loginSchema.parse(input);
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: validated.email,
-    password: validated.password,
-  });
-
-  if (error || !data.user || !data.session) {
-    throw new Error(error?.message || 'Authentication failed');
-  }
-
-  const dbUser = await AuthService.handleAuthCallback(data.user);
-
-  let userAgent = 'unknown';
-  let ipAddress = '127.0.0.1';
   try {
-    const headersList = await headers();
-    userAgent = headersList.get('user-agent') || 'unknown';
-    ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
-  } catch (headerError) {
-    console.warn('⚠️ Could not extract headers for user login:', headerError);
-  }
+    const validated = loginSchema.parse(input);
+    const supabase = await createClient();
 
-  // Log session in DB
-  const session = await prisma.session.create({
-    data: {
-      userId: dbUser.id,
-      tokenHash: data.session.access_token,
-      expiresAt: new Date((data.session.expires_at ?? 0) * 1000),
-      ipAddress,
-      deviceInfo: userAgent ? { userAgent } : {},
-    },
-  });
-
-  try {
-    await createAuditLog({
-      userId: dbUser.id,
-      action: 'USER_LOGIN',
-      entityType: 'session',
-      entityId: session.id,
-      newValues: { email: dbUser.email, ipAddress },
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: validated.email,
+      password: validated.password,
     });
-  } catch (auditError) {
-    console.warn('⚠️ Failed to create audit log for user login:', auditError);
-  }
 
-  return { success: true, user: dbUser };
+    if (error || !data.user || !data.session) {
+      return { success: false, error: error?.message || 'Invalid email or password' };
+    }
+
+    const dbUser = await AuthService.handleAuthCallback(data.user);
+
+    let userAgent = 'unknown';
+    let ipAddress = '127.0.0.1';
+    try {
+      const headersList = await headers();
+      userAgent = headersList.get('user-agent') || 'unknown';
+      ipAddress = headersList.get('x-forwarded-for')?.split(',')[0] || '127.0.0.1';
+    } catch (headerError) {
+      console.warn('⚠️ Could not extract headers for user login:', headerError);
+    }
+
+    // Log session in DB
+    const session = await prisma.session.create({
+      data: {
+        userId: dbUser.id,
+        tokenHash: data.session.access_token,
+        expiresAt: new Date((data.session.expires_at ?? 0) * 1000),
+        ipAddress,
+        deviceInfo: userAgent ? { userAgent } : {},
+      },
+    });
+
+    try {
+      await createAuditLog({
+        userId: dbUser.id,
+        action: 'USER_LOGIN',
+        entityType: 'session',
+        entityId: session.id,
+        newValues: { email: dbUser.email, ipAddress },
+      });
+    } catch (auditError) {
+      console.warn('⚠️ Failed to create audit log for user login:', auditError);
+    }
+
+    return { success: true, user: dbUser };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
+  }
 }
 
 export async function signUp(input: RegisterInput) {
-  const validated = registerSchema.parse(input);
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.auth.signUp({
-    email: validated.email,
-    password: validated.password,
-    options: {
-      data: {
-        full_name: validated.fullName,
-      },
-    },
-  });
-
-  if (error || !data.user) {
-    throw new Error(error?.message || 'Registration failed');
-  }
-
-  const dbUser = await AuthService.handleAuthCallback(data.user);
-
   try {
-    await createAuditLog({
-      userId: dbUser.id,
-      action: 'USER_REGISTER',
-      entityType: 'user',
-      entityId: dbUser.id,
-      newValues: { email: dbUser.email },
-    });
-  } catch (auditError) {
-    console.warn('⚠️ Failed to create audit log for user registration:', auditError);
-  }
+    const validated = registerSchema.parse(input);
+    const supabase = await createClient();
 
-  return { success: true, user: dbUser };
+    const { data, error } = await supabase.auth.signUp({
+      email: validated.email,
+      password: validated.password,
+      options: {
+        data: {
+          full_name: validated.fullName,
+        },
+      },
+    });
+
+    if (error || !data.user) {
+      return { success: false, error: error?.message || 'Registration failed' };
+    }
+
+    const dbUser = await AuthService.handleAuthCallback(data.user);
+
+    try {
+      await createAuditLog({
+        userId: dbUser.id,
+        action: 'USER_REGISTER',
+        entityType: 'user',
+        entityId: dbUser.id,
+        newValues: { email: dbUser.email },
+      });
+    } catch (auditError) {
+      console.warn('⚠️ Failed to create audit log for user registration:', auditError);
+    }
+
+    return { success: true, user: dbUser };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
+  }
 }
 
 export async function signInWithOtp(input: ForgotPasswordInput) {
-  const validated = forgotPasswordSchema.parse(input);
-  const supabase = await createClient();
+  try {
+    const validated = forgotPasswordSchema.parse(input);
+    const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email: validated.email,
-    options: {
-      shouldCreateUser: true,
-    },
-  });
+    const { error } = await supabase.auth.signInWithOtp({
+      email: validated.email,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
 
-  if (error) {
-    throw new Error(error.message);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'An unexpected error occurred' };
   }
-
-  return { success: true };
 }
 
 export async function verifyOtp(input: OtpInput) {

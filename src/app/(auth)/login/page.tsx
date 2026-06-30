@@ -33,6 +33,8 @@ export default function LoginPage() {
         toast.success('Successfully logged in!');
         router.push('/');
         router.refresh();
+      } else {
+        toast.error(res.error || 'Login failed');
       }
     } catch (err: any) {
       toast.error(err.message || 'Login failed');
@@ -53,6 +55,8 @@ export default function LoginPage() {
       if (res.success) {
         toast.success('OTP sent to your email!');
         setOtpSent(true);
+      } else {
+        toast.error(res.error || 'Failed to send OTP');
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to send OTP');
