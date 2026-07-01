@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@/features/auth/schemas';
@@ -169,6 +170,15 @@ export default function LoginPage() {
           )}
         </form>
       )}
+
+      <div className="text-center pt-2">
+        <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          Don't have an account?{' '}
+          <Link href="/register" className="text-[#D90429] hover:underline font-bold">
+            Create Account
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
