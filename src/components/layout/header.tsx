@@ -4,6 +4,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import { createClient } from '@/lib/supabase/client';
+import { signOut } from '@/features/auth/actions';
 import {
   Search, Menu, X, Sun, Moon, Bell, Tv, ChevronDown,
   Sparkles, TrendingUp, Globe, Zap, Mic, User, LogOut,
@@ -70,6 +72,58 @@ export function Header() {
   const [scrolled, setScrolled] = React.useState(false);
   const searchRef = React.useRef<HTMLInputElement>(null);
   const megaRef = React.useRef<HTMLDivElement>(null);
+
+  const [user, setUser] = React.useState<any>(null);
+  const [authDropdownOpen, setAuthDropdownOpen] = React.useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const supabase = createClient();
+
+    const fetchSessionUser = async () => {
+      try {
+        const res = await fetch('/api/auth/session');
+        if (res.ok) {
+          const json = await res.json();
+          setUser(json.data);
+        } else {
+          setUser(null);
+        }
+      } catch {
+        setUser(null);
+      }
+    };
+
+    fetchSessionUser();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        fetchSessionUser();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setAuthDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setUser(null);
+    router.push('/');
+    router.refresh();
+  };
 
   React.useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 12);
@@ -253,6 +307,87 @@ export function Header() {
                 <Bell className="w-4.5 h-4.5" />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#D90429] rounded-full border-2 border-white dark:border-[#070C18]" />
               </button>
+
+              {/* Profile Dropdown / Login Button */}
+              <div className="relative" ref={dropdownRef}>
+                {user ? (
+                  <>
+                    <button
+                      onClick={() => setAuthDropdownOpen(!authDropdownOpen)}
+                      className="flex items-center gap-1.5 focus:outline-none cursor-pointer"
+                      aria-label="User menu"
+                    >
+                      {user.avatarUrl ? (
+                        <img
+                          src={user.avatarUrl}
+                          alt={user.fullName}
+                          className="w-8 h-8 rounded-full border border-gray-200 dark:border-zinc-700 object-cover"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-[#D90429] text-white flex items-center justify-center font-bold text-xs shadow-sm uppercase">
+                          {user.fullName.charAt(0)}
+                        </div>
+                      )}
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400 hidden sm:block" />
+                    </button>
+
+                    {authDropdownOpen && (
+                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#0D1526] border border-gray-150 dark:border-white/5 rounded-2xl shadow-xl py-2 z-[250] animate-slide-down">
+                        <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5">
+                          <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                            {user.fullName}
+                          </p>
+                          <p className="text-[11px] text-gray-400 truncate">
+                            {user.email}
+                          </p>
+                          <span className="inline-block mt-1 text-[9px] font-black uppercase tracking-wider text-red-500 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-md">
+                            {user.role?.name || 'Reader'}
+                          </span>
+                        </div>
+
+                        <div className="py-1">
+                          {user.role?.slug !== 'reader' && (
+                            <Link
+                              href="/admin"
+                              onClick={() => setAuthDropdownOpen(false)}
+                              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-[#D90429] transition-all"
+                            >
+                              <Tv className="w-4 h-4" />
+                              डैशबोर्ड (Dashboard)
+                            </Link>
+                          )}
+                          <Link
+                            href="/profile"
+                            onClick={() => setAuthDropdownOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 hover:text-[#D90429] transition-all"
+                          >
+                            <User className="w-4 h-4" />
+                            मेरी प्रोफाइल (Profile)
+                          </Link>
+                        </div>
+
+                        <div className="border-t border-gray-100 dark:border-white/5 pt-1">
+                          <button
+                            onClick={() => { setAuthDropdownOpen(false); handleSignOut(); }}
+                            className="w-full flex items-center gap-2 px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/10 transition-all text-left cursor-pointer"
+                          >
+                            <LogOut className="w-4 h-4" />
+                            लॉग आउट (Logout)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 text-xs font-black uppercase tracking-wide hover:opacity-90 transition-all shadow-sm"
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    लॉगिन
+                  </Link>
+                )}
+              </div>
 
               {/* Mobile Hamburger */}
               <button
