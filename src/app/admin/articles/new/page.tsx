@@ -1,375 +1,462 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { createArticle } from '@/features/articles/actions';
-import { cn } from '@/utils/cn';
-import { Loader2, ArrowLeft, Eye } from 'lucide-react';
+import {
+  ArrowLeft, Loader2, Send, Save, Eye,
+  Hash, Image, Globe, ChevronDown, ChevronUp,
+  Flame, Star, AlertCircle,
+} from 'lucide-react';
 import Link from 'next/link';
 
-// ── Schema ────────────────────────────────────────────────────────────────────
-const newArticleSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters'),
-  excerpt: z.string().max(500).optional(),
-  categoryId: z.string().uuid('Please select a valid category'),
-  status: z.enum(['DRAFT', 'IN_REVIEW', 'APPROVED', 'PUBLISHED']),
-});
+interface Category { id: string; name: string; slug: string; }
 
-type NewArticleForm = z.infer<typeof newArticleSchema>;
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface Category {
-  id: string;
-  name: string;
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function NewArticlePage() {
-  const editorRef = useRef<unknown>(null);
-  const holderRef = useRef<HTMLDivElement>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [seoOpen, setSeoOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [authorId, setAuthorId] = useState<string | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<NewArticleForm>({
-    resolver: zodResolver(newArticleSchema),
-    defaultValues: {
-      status: 'DRAFT',
-    },
-  });
+  // Form state
+  const [title, setTitle] = useState('');
+  const [slug, setSlug] = useState('');
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [excerpt, setExcerpt] = useState('');
+  const [body, setBody] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED'>('DRAFT');
+  const [isFeatured, setIsFeatured] = useState(false);
+  const [isBreaking, setIsBreaking] = useState(false);
+  const [metaTitle, setMetaTitle] = useState('');
+  const [metaDescription, setMetaDescription] = useState('');
+  const [featuredImageUrl, setFeaturedImageUrl] = useState('');
+  const [tags, setTags] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ── Load categories ───────────────────────────────────────────────────────
+  // Auto-generate slug
+  useEffect(() => {
+    if (!slugEdited && title) {
+      setSlug(slugify(title));
+    }
+  }, [title, slugEdited]);
+
+  // Load categories and current user
   useEffect(() => {
     fetch('/api/categories')
-      .then((r) => r.json())
-      .then((data: Category[] | { data: Category[] }) => {
-        const cats = Array.isArray(data) ? data : data.data ?? [];
-        setCategories(cats);
-      })
-      .catch(() => {
-        toast.error('Failed to load categories');
-      });
+      .then(r => r.json())
+      .then(data => setCategories(data.data ?? []))
+      .catch(() => toast.error('Failed to load categories'));
+
+    fetch('/api/auth/session')
+      .then(r => r.json())
+      .then(data => { if (data.data?.id) setAuthorId(data.data.id); })
+      .catch(() => {});
   }, []);
 
-  // ── Initialize EditorJS ───────────────────────────────────────────────────
-  useEffect(() => {
-    if (!holderRef.current || editorRef.current) return;
+  const validate = () => {
+    const errs: Record<string, string> = {};
+    if (!title.trim()) errs.title = 'Title is required';
+    if (!slug.trim()) errs.slug = 'Slug is required';
+    if (!categoryId) errs.categoryId = 'Please select a category';
+    if (!body.trim()) errs.body = 'Article body is required';
+    if (!authorId) errs.author = 'You must be logged in to create articles';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
-    let destroyed = false;
-
-    (async () => {
-      const [
-        { default: EditorJS },
-        { default: Header },
-        { default: List },
-        { default: Quote },
-        { default: Code },
-        { default: ImageTool },
-        { default: Delimiter },
-      ] = await Promise.all([
-        import('@editorjs/editorjs'),
-        import('@editorjs/header'),
-        import('@editorjs/list'),
-        import('@editorjs/quote'),
-        import('@editorjs/code'),
-        import('@editorjs/image'),
-        import('@editorjs/delimiter'),
-      ]);
-
-      // @editorjs/embed has broken package.json exports — use require fallback
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-      const Embed = (require('@editorjs/embed') as any).default ?? require('@editorjs/embed');
-
-
-      if (destroyed || !holderRef.current) return;
-
-      const editor = new EditorJS({
-        holder: holderRef.current,
-        placeholder: 'Write your story here...',
-        tools: {
-          header: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            class: Header as any,
-            config: { levels: [2, 3, 4], defaultLevel: 2 },
-          },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          list: { class: List as any, inlineToolbar: true },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          quote: { class: Quote as any, inlineToolbar: true },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          code: { class: Code as any },
-          image: {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            class: ImageTool as any,
-            config: {
-              uploader: {
-                uploadByFile: async (file: File) => {
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  const res = await fetch('/api/media/upload', {
-                    method: 'POST',
-                    body: formData,
-                  });
-                  const data = await res.json();
-                  return { success: 1, file: { url: data.url } };
-                },
-              },
-            },
-          },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          delimiter: { class: Delimiter as any },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          embed: { class: Embed as any, inlineToolbar: true },
-        },
-        onReady: () => {
-          if (!destroyed) setEditorReady(true);
-        },
-      });
-
-      if (!destroyed) {
-        editorRef.current = editor;
-      }
-    })();
-
-    return () => {
-      destroyed = true;
-      if (editorRef.current) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (editorRef.current as any).destroy?.();
-        editorRef.current = null;
-      }
-    };
-  // Only run once on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Submit ────────────────────────────────────────────────────────────────
-  const onSubmit = async (formData: NewArticleForm) => {
-    if (!editorRef.current) {
-      toast.error('Editor is not ready yet');
+  const handleSubmit = async (submitStatus: 'DRAFT' | 'PUBLISHED') => {
+    if (!validate()) {
+      toast.error('Please fix the errors before submitting');
       return;
     }
-
     setIsSubmitting(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const editorData = await (editorRef.current as any).save();
-
-      const result = await createArticle({
-        title: formData.title,
-        excerpt: formData.excerpt,
-        categoryId: formData.categoryId,
-        status: formData.status,
-        content: editorData,
-        visibility: 'PUBLIC',
-        priority: 0,
-        isFeatured: false,
-        isBreaking: false,
+      const res = await fetch('/api/articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          slug: slug.trim(),
+          excerpt: excerpt.trim() || null,
+          content: { blocks: [{ type: 'paragraph', data: { text: body } }] },
+          category_id: categoryId,
+          status: submitStatus,
+          is_featured: isFeatured,
+          is_breaking: isBreaking,
+          author_id: authorId,
+          meta_title: metaTitle.trim() || null,
+          meta_description: metaDescription.trim() || null,
+          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        }),
       });
 
-      if (result.success) {
-        toast.success('Article saved successfully!');
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to create article');
       }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to save article';
-      toast.error(message);
+
+      toast.success(submitStatus === 'PUBLISHED' ? '🎉 Article published!' : '✅ Draft saved!');
+      router.push('/admin/articles');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const charCount = body.length;
+  const wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
+  const readingTime = Math.max(1, Math.ceil(wordCount / 200));
+
   return (
-    <div className="space-y-6">
-      {/* Top bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/articles"
-            className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Link>
-          <span className="text-zinc-300 dark:text-zinc-700">/</span>
-          <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-            New Article
-          </h1>
-        </div>
+    <div className="max-w-5xl mx-auto pb-12">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <Link
+          href="/admin/articles"
+          className="flex items-center gap-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Articles
+        </Link>
         <div className="flex items-center gap-2">
           <button
-            type="button"
-            className="inline-flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors px-3 py-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            onClick={() => handleSubmit('DRAFT')}
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm font-semibold px-4 py-2.5 transition-all disabled:opacity-50"
           >
-            <Eye className="h-4 w-4" />
-            Preview
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Draft
+          </button>
+          <button
+            onClick={() => handleSubmit('PUBLISHED')}
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#D90429] hover:bg-red-700 text-white text-sm font-bold px-5 py-2.5 transition-all shadow-md hover:shadow-lg disabled:opacity-50"
+          >
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Publish Now
           </button>
         </div>
       </div>
 
-      {/* Two-column layout */}
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="flex flex-col xl:flex-row gap-6 items-start"
-      >
-        {/* ── Left: Editor ── */}
-        <div className="flex-[2] min-w-0 space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-5">
           {/* Title */}
-          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6">
-            <input
-              {...register('title')}
-              autoFocus
-              placeholder="Article Title..."
-              className={cn(
-                'w-full text-3xl font-extrabold text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-300 dark:placeholder:text-zinc-700 bg-transparent border-none outline-none focus:ring-0 resize-none leading-snug',
-                errors.title && 'placeholder:text-red-300',
-              )}
-            />
-            {errors.title && (
-              <p className="mt-2 text-xs text-red-500">
-                {errors.title.message}
-              </p>
-            )}
-          </div>
-
-          {/* Excerpt */}
-          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6">
-            <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
-              Excerpt
-            </label>
-            <textarea
-              {...register('excerpt')}
-              rows={3}
-              placeholder="Brief description of the article (optional)..."
-              className="w-full text-sm text-zinc-700 dark:text-zinc-300 placeholder:text-zinc-300 dark:placeholder:text-zinc-700 bg-transparent border-none outline-none focus:ring-0 resize-none leading-relaxed"
-            />
-            {errors.excerpt && (
-              <p className="mt-1 text-xs text-red-500">
-                {errors.excerpt.message}
-              </p>
-            )}
-          </div>
-
-          {/* EditorJS Mount */}
-          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 min-h-[480px] overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Content
-              </span>
-              {!editorReady && (
-                <span className="flex items-center gap-1.5 text-xs text-zinc-400">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading editor…
-                </span>
-              )}
-            </div>
-            <div
-              ref={holderRef}
-              id="editorjs"
-              className="prose dark:prose-invert max-w-none px-6 py-4 min-h-[400px] [&_.codex-editor]:outline-none"
-            />
-          </div>
-        </div>
-
-        {/* ── Right: Sidebar ── */}
-        <div className="w-full xl:w-80 shrink-0 space-y-4">
-          {/* Publish */}
-          <div className="bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Publish Settings
-            </h2>
-
-            {/* Status */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="status"
-                className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider"
-              >
-                Status
-              </label>
-              <select
-                id="status"
-                {...register('status')}
-                className={cn(
-                  'w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors',
-                  errors.status && 'border-red-400',
-                )}
-              >
-                <option value="DRAFT">Draft</option>
-                <option value="IN_REVIEW">In Review</option>
-                <option value="APPROVED">Approved</option>
-                <option value="PUBLISHED">Published</option>
-              </select>
-              {errors.status && (
-                <p className="text-xs text-red-500">{errors.status.message}</p>
-              )}
-            </div>
-
-            {/* Category */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="categoryId"
-                className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider"
-              >
-                Category
-              </label>
-              <select
-                id="categoryId"
-                {...register('categoryId')}
-                className={cn(
-                  'w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors',
-                  errors.categoryId && 'border-red-400',
-                )}
-              >
-                <option value="">Select category…</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-              {errors.categoryId && (
-                <p className="text-xs text-red-500">
-                  {errors.categoryId.message}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-4">
+            <div>
+              <textarea
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Article Title..."
+                rows={2}
+                className="w-full text-2xl font-extrabold text-zinc-900 dark:text-zinc-50 placeholder-zinc-300 dark:placeholder-zinc-700 bg-transparent resize-none focus:outline-none leading-tight"
+              />
+              {errors.title && (
+                <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                  <AlertCircle className="h-3 w-3" /> {errors.title}
                 </p>
               )}
             </div>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={cn(
-                'w-full inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 transition-colors',
+            {/* Slug */}
+            <div>
+              <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1 mb-1.5">
+                <Hash className="h-3 w-3" /> URL Slug
+              </label>
+              <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 focus-within:border-[#D90429] focus-within:ring-1 focus-within:ring-[#D90429]/20 transition-all">
+                <span className="text-xs text-zinc-400 shrink-0 hidden sm:block">/article/</span>
+                <input
+                  value={slug}
+                  onChange={e => { setSlug(e.target.value); setSlugEdited(true); }}
+                  className="flex-1 text-xs font-mono text-zinc-700 dark:text-zinc-300 bg-transparent focus:outline-none"
+                  placeholder="article-url-slug"
+                />
+              </div>
+              {errors.slug && (
+                <p className="text-xs text-red-500 mt-1">{errors.slug}</p>
               )}
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Saving…' : 'Save Article'}
-            </button>
+            </div>
+
+            {/* Excerpt */}
+            <div>
+              <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5 block">
+                Excerpt / Summary
+              </label>
+              <textarea
+                value={excerpt}
+                onChange={e => setExcerpt(e.target.value)}
+                placeholder="Write a brief summary of the article (shown in cards and search results)..."
+                rows={2}
+                maxLength={300}
+                className="w-full text-sm text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 dark:placeholder-zinc-600 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 resize-none focus:outline-none focus:border-[#D90429] focus:ring-1 focus:ring-[#D90429]/20 transition-all leading-relaxed"
+              />
+              <p className="text-[10px] text-zinc-400 text-right">{excerpt.length}/300</p>
+            </div>
           </div>
 
-          {/* Tips card */}
-          <div className="bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5">
-            <h2 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">
-              Writing Tips
-            </h2>
-            <ul className="space-y-2 text-xs text-zinc-500 dark:text-zinc-400">
-              <li>• Use Tab key to discover EditorJS block tools</li>
-              <li>• Headings improve SEO and readability</li>
-              <li>• Keep excerpts under 160 characters for SEO</li>
-              <li>• Images require alt text for accessibility</li>
-            </ul>
+          {/* Body */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5">
+            <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+              <span>Article Body</span>
+              <span className="text-[10px] font-normal text-zinc-400 normal-case">
+                {wordCount} words · ~{readingTime} min read
+              </span>
+            </label>
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              placeholder="Write your article here...
+
+You can use multiple paragraphs. Add as much content as you need.
+The article will be formatted beautifully on the front-end."
+              rows={18}
+              className="w-full text-sm text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 dark:placeholder-zinc-600 bg-transparent resize-y focus:outline-none leading-relaxed"
+            />
+            {errors.body && (
+              <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                <AlertCircle className="h-3 w-3" /> {errors.body}
+              </p>
+            )}
+            <div className="flex justify-between items-center mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <span className="text-[10px] text-zinc-400">{charCount} characters</span>
+              <Link href="#" className="text-[10px] text-[#D90429] hover:underline flex items-center gap-1">
+                <Eye className="h-3 w-3" /> Preview
+              </Link>
+            </div>
+          </div>
+
+          {/* SEO Section */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+            <button
+              onClick={() => setSeoOpen(!seoOpen)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-blue-500" />
+                <span className="font-bold text-zinc-900 dark:text-zinc-50 text-sm">SEO & Meta Tags</span>
+                <span className="text-[10px] px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full font-bold">GOOGLE</span>
+              </div>
+              {seoOpen ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+            </button>
+            {seoOpen && (
+              <div className="px-5 pb-5 space-y-4 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Meta Title <span className="font-normal normal-case text-zinc-400">(shown in Google)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={metaTitle}
+                    onChange={e => setMetaTitle(e.target.value)}
+                    placeholder={title || 'Article title for search engines...'}
+                    maxLength={70}
+                    className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] focus:ring-1 focus:ring-[#D90429]/20 transition-all"
+                  />
+                  <p className={`text-[10px] text-right mt-1 ${metaTitle.length > 60 ? 'text-orange-500' : 'text-zinc-400'}`}>
+                    {metaTitle.length}/70 {metaTitle.length > 60 && '(too long for Google)'}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Meta Description <span className="font-normal normal-case text-zinc-400">(shown below title in Google)</span>
+                  </label>
+                  <textarea
+                    value={metaDescription}
+                    onChange={e => setMetaDescription(e.target.value)}
+                    placeholder={excerpt || 'Brief description for search results (150-160 characters ideal)...'}
+                    rows={3}
+                    maxLength={200}
+                    className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] focus:ring-1 focus:ring-[#D90429]/20 transition-all resize-none"
+                  />
+                  <p className={`text-[10px] text-right mt-1 ${metaDescription.length > 160 ? 'text-orange-500' : 'text-zinc-400'}`}>
+                    {metaDescription.length}/200 {metaDescription.length > 160 && '(ideal is ≤160)'}
+                  </p>
+                </div>
+
+                {/* Google Preview */}
+                {(metaTitle || title) && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4 bg-zinc-50 dark:bg-zinc-900">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Google Preview</p>
+                    <p className="text-xs text-zinc-400 mb-0.5">
+                      {process.env.NEXT_PUBLIC_APP_URL || 'https://khabar-cut.vercel.app'}/article/{slug || 'article-slug'}
+                    </p>
+                    <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-0.5 line-clamp-1">
+                      {metaTitle || title || 'Article Title'}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
+                      {metaDescription || excerpt || 'Article description will appear here in Google search results...'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
-      </form>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          {/* Settings */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+            <button
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left"
+            >
+              <span className="font-bold text-zinc-900 dark:text-zinc-50 text-sm">Article Settings</span>
+              {settingsOpen ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+            </button>
+            {settingsOpen && (
+              <div className="px-5 pb-5 space-y-4 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                {/* Category */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Category *
+                  </label>
+                  <select
+                    value={categoryId}
+                    onChange={e => setCategoryId(e.target.value)}
+                    className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] transition-all"
+                  >
+                    <option value="">Select category...</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
+                  {errors.categoryId && <p className="text-xs text-red-500 mt-1">{errors.categoryId}</p>}
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Status
+                  </label>
+                  <select
+                    value={status}
+                    onChange={e => setStatus(e.target.value as 'DRAFT' | 'PUBLISHED')}
+                    className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] transition-all"
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="PUBLISHED">Published</option>
+                  </select>
+                </div>
+
+                {/* Toggles */}
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-4 w-4 text-amber-500" />
+                      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Featured Article</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFeatured(!isFeatured)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${isFeatured ? 'bg-amber-500' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${isFeatured ? 'left-5' : 'left-0.5'}`} />
+                    </button>
+                  </label>
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <div className="flex items-center gap-2">
+                      <Flame className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Breaking News</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsBreaking(!isBreaking)}
+                      className={`relative w-10 h-5 rounded-full transition-colors ${isBreaking ? 'bg-[#D90429]' : 'bg-zinc-200 dark:bg-zinc-700'}`}
+                    >
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all ${isBreaking ? 'left-5' : 'left-0.5'}`} />
+                    </button>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Featured Image */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Image className="h-4 w-4 text-zinc-500" />
+              <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Featured Image</span>
+            </div>
+            <input
+              type="url"
+              value={featuredImageUrl}
+              onChange={e => setFeaturedImageUrl(e.target.value)}
+              placeholder="https://image-url.com/photo.jpg"
+              className="w-full text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] transition-all"
+            />
+            {featuredImageUrl && (
+              <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 aspect-video">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={featuredImageUrl}
+                  alt="Featured"
+                  className="w-full h-full object-cover"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Tags */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Hash className="h-4 w-4 text-zinc-500" />
+              <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Tags</span>
+            </div>
+            <input
+              type="text"
+              value={tags}
+              onChange={e => setTags(e.target.value)}
+              placeholder="politics, india, election, 2024"
+              className="w-full text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] transition-all"
+            />
+            <p className="text-[10px] text-zinc-400">Separate tags with commas</p>
+          </div>
+
+          {/* Auth Error */}
+          {errors.author && (
+            <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-4 py-3 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+              <p className="text-xs text-red-700 dark:text-red-400">{errors.author}</p>
+            </div>
+          )}
+
+          {/* Submit Buttons */}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => handleSubmit('PUBLISHED')}
+              disabled={isSubmitting}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#D90429] hover:bg-red-700 text-white text-sm font-bold px-5 py-3 transition-all shadow-md hover:shadow-lg disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Publish Article
+            </button>
+            <button
+              onClick={() => handleSubmit('DRAFT')}
+              disabled={isSubmitting}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm font-semibold px-5 py-2.5 transition-all disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              Save as Draft
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

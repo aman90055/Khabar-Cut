@@ -35,6 +35,12 @@ export const adminNavigation: NavItem[] = [
     requiredPermission: 'articles.read',
   },
   {
+    title: 'Authors & Reporters',
+    href: '/admin/authors',
+    icon: 'Users',
+    requiredPermission: 'users.read',
+  },
+  {
     title: 'Categories',
     href: '/admin/categories',
     icon: 'FolderTree',
