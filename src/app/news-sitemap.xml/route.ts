@@ -5,16 +5,26 @@ const supabase = createAdminClient();
 export const revalidate = 300; // 5 minutes
 
 export async function GET() {
-  // Google News sitemap: only articles from last 48 hours
+  // Google News sitemap: articles from last 48 hours, or latest 50 articles if none in 48 hours
   const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-  const { data: articles } = await supabase
+  let { data: articles } = await supabase
     .from('articles')
     .select('id, title, slug, published_at, category:categories!category_id(name, slug)')
     .eq('status', 'PUBLISHED')
     .gte('published_at', twoDaysAgo)
     .order('published_at', { ascending: false })
     .limit(1000);
+
+  if (!articles || articles.length === 0) {
+    const { data: latest } = await supabase
+      .from('articles')
+      .select('id, title, slug, published_at, category:categories!category_id(name, slug)')
+      .eq('status', 'PUBLISHED')
+      .order('published_at', { ascending: false })
+      .limit(50);
+    articles = latest;
+  }
 
   const baseUrl = 'https://khabarcut.in';
 
