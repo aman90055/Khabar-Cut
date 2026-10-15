@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://khabar-cut.vercel.app';
+const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://khabarcut.in';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -15,8 +15,15 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
         disallow: ['/admin/', '/api/'],
       },
+      {
+        userAgent: 'Mediapartners-Google',
+        allow: '/',
+      },
     ],
-    sitemap: `${siteUrl}/sitemap.xml`,
+    sitemap: [
+      `${siteUrl}/sitemap.xml`,
+      `${siteUrl}/news-sitemap.xml`,
+    ],
     host: siteUrl,
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,13 +10,18 @@ import type { LoginInput } from '@/features/auth/types';
 import { signInWithEmail, signInWithOtp } from '@/features/auth/actions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { Eye, EyeOff } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const [authType, setAuthType] = React.useState<'password' | 'otp'>('password');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [otpSent, setOtpSent] = React.useState(false);
   const [otpEmail, setOtpEmail] = React.useState('');
+  const [showPassword, setShowPassword] = React.useState(false);
+
+  const searchParams = useSearchParams();
+  const redirectToParam = searchParams.get('redirectTo');
 
   const {
     register,
@@ -32,7 +37,9 @@ export default function LoginPage() {
       const res = await signInWithEmail(data);
       if (res.success) {
         toast.success('Successfully logged in!');
-        router.push('/');
+        const userRole = res.user?.role?.slug || 'reader';
+        const destination = redirectToParam || (userRole !== 'reader' ? '/admin' : '/');
+        router.push(destination);
         router.refresh();
       } else {
         toast.error(res.error || 'Login failed');
@@ -68,24 +75,26 @@ export default function LoginPage() {
 
   return (
     <div className="space-y-6">
-      {/* Tabs */}
-      <div className="flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+      {/* Auth Type Switcher */}
+      <div className="flex bg-zinc-100 dark:bg-zinc-950 p-1 rounded-xl border border-zinc-200 dark:border-zinc-850">
         <button
+          type="button"
           onClick={() => setAuthType('password')}
-          className={`flex-1 rounded-md py-1.5 text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
             authType === 'password'
-              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+              ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
           Password
         </button>
         <button
+          type="button"
           onClick={() => setAuthType('otp')}
-          className={`flex-1 rounded-md py-1.5 text-sm font-semibold transition-all cursor-pointer ${
+          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${
             authType === 'otp'
-              ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+              ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
           }`}
         >
           One-Time Passcode
@@ -99,36 +108,58 @@ export default function LoginPage() {
               Email Address
             </label>
             <input
-              type="email"
-              required
               {...register('email')}
+              type="email"
               className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600"
               placeholder="you@example.com"
             />
             {errors.email && (
-              <p className="text-xs text-red-500 font-semibold">{errors.email.message}</p>
+              <p className="text-xs text-red-500 font-medium mt-1">{errors.email.message}</p>
             )}
           </div>
 
           <div className="space-y-1">
-            <div className="flex justify-between items-center">
+            <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">
                 Password
               </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-bold text-[#D90429] hover:underline"
+              >
+                Forgot Password?
+              </Link>
             </div>
-            <input
-              type="password"
-              required
-              {...register('password')}
-              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                {...register('password')}
+                type={showPassword ? 'text' : 'password'}
+                className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 pr-10 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
             {errors.password && (
-              <p className="text-xs text-red-500 font-semibold">{errors.password.message}</p>
+              <p className="text-xs text-red-500 font-medium mt-1">{errors.password.message}</p>
             )}
           </div>
 
-          <Button type="submit" disabled={isSubmitting} className="w-full h-11 text-sm font-bold mt-2">
+          <Button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full h-11 text-sm font-bold bg-[#D90429] hover:bg-red-700 text-white mt-2"
+          >
             {isSubmitting ? 'Signing In...' : 'Sign In'}
           </Button>
         </form>
@@ -180,5 +211,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-center text-sm text-zinc-400">Loading...</div>}>
+      <LoginForm />
+    </React.Suspense>
   );
 }

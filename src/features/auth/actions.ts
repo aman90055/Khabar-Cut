@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { AuthService } from '@/server/services/auth-service';
 import { createAuditLog } from '@/middleware/audit';
-import { prisma } from '@/lib/prisma';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { 
   loginSchema, 
   registerSchema, 
@@ -21,6 +21,11 @@ import type {
   ChangePasswordInput 
 } from './types';
 import { headers } from 'next/headers';
+
+const adminSupabase = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function signInWithEmail(input: LoginInput) {
   try {
@@ -48,23 +53,25 @@ export async function signInWithEmail(input: LoginInput) {
       console.warn('⚠️ Could not extract headers for user login:', headerError);
     }
 
-    // Log session in DB
-    const session = await prisma.session.create({
-      data: {
-        userId: dbUser.id,
-        tokenHash: data.session.access_token,
-        expiresAt: new Date((data.session.expires_at ?? 0) * 1000),
-        ipAddress,
-        deviceInfo: userAgent ? { userAgent } : {},
-      },
-    });
+    // Log session in DB using Supabase client
+    const { data: session } = await adminSupabase
+      .from('sessions')
+      .insert({
+        user_id: dbUser.id,
+        token_hash: data.session.access_token,
+        expires_at: new Date((data.session.expires_at ?? 0) * 1000).toISOString(),
+        ip_address: ipAddress,
+        device_info: userAgent ? { userAgent } : {},
+      })
+      .select('id')
+      .single();
 
     try {
       await createAuditLog({
         userId: dbUser.id,
         action: 'USER_LOGIN',
         entityType: 'session',
-        entityId: session.id,
+        entityId: session?.id || 'unknown',
         newValues: { email: dbUser.email, ipAddress },
       });
     } catch (auditError) {
@@ -162,15 +169,18 @@ export async function signOut() {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (user) {
-    const dbUser = await prisma.user.findUnique({
-      where: { authId: user.id },
-    });
+    const { data: dbUser } = await adminSupabase
+      .from('users')
+      .select('id')
+      .eq('auth_id', user.id)
+      .single();
 
     if (dbUser) {
-      await prisma.session.updateMany({
-        where: { userId: dbUser.id, deletedAt: null },
-        data: { deletedAt: new Date() },
-      });
+      await adminSupabase
+        .from('sessions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('user_id', dbUser.id)
+        .is('deleted_at', null);
 
       await createAuditLog({
         userId: dbUser.id,
@@ -219,7 +229,6 @@ export async function changePassword(input: ChangePasswordInput) {
   const validated = changePasswordSchema.parse(input);
   const supabase = await createClient();
 
-  // Supabase lets us update password of currently active session
   const { error } = await supabase.auth.updateUser({
     password: validated.newPassword,
   });

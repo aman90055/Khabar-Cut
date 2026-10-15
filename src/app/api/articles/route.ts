@@ -15,19 +15,25 @@ export async function GET(request: Request) {
     const status = searchParams.get('status') ?? undefined;
     const search = searchParams.get('search') ?? undefined;
 
+    // Matches our 25-table schema exactly
     let query = supabase
       .from('articles')
-      .select(`
-        id, title, slug, excerpt, status, published_at, created_at, view_count,
-        categories:category_id ( name, slug ),
-        author:author_id ( full_name )
-      `, { count: 'exact' })
-      .is('deleted_at', null)
+      .select(
+        `
+        id, title, slug, excerpt, status,
+        published_at, created_at, views:view_count,
+        is_featured, is_breaking,
+        category:categories!category_id ( name, slug ),
+        author:users!author_id ( display_name:full_name )
+        `,
+        { count: 'exact' }
+      )
       .order('created_at', { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1);
 
     if (status && status !== 'ALL') {
-      query = query.eq('status', status);
+      const mappedStatus = status.toUpperCase();
+      query = query.eq('status', mappedStatus);
     }
 
     if (search) {
@@ -37,7 +43,7 @@ export async function GET(request: Request) {
     const { data: articles, count, error } = await query;
 
     if (error) {
-      console.error('Articles fetch error:', error.message);
+      console.error('[API] Articles fetch error:', error.message);
       return NextResponse.json({ data: [], meta: { total: 0, page, pageSize, totalPages: 0 } });
     }
 
@@ -49,7 +55,7 @@ export async function GET(request: Request) {
       meta: { total, page, pageSize, totalPages },
     });
   } catch (err) {
-    console.error('Articles route error:', err);
+    console.error('[API] Articles route error:', err);
     return NextResponse.json({ data: [], meta: { total: 0, page: 1, pageSize: 20, totalPages: 0 } });
   }
 }
@@ -57,41 +63,66 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, slug, excerpt, content, category_id, status, is_featured, is_breaking, author_id, meta_title, meta_description, tags } = body;
+    const {
+      title, slug, short_description, excerpt, content,
+      category_id, status, is_featured, is_breaking, is_trending,
+      author_id, seo_title, seo_description, tags,
+    } = body;
 
-    if (!title || !category_id || !author_id) {
-      return NextResponse.json({ error: 'Title, category, and author are required' }, { status: 400 });
+    if (!title) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    const articleSlug = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    // Auto-generate slug from Hindi/English title
+    const articleSlug = slug ||
+      title
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/(^-|-$)/g, '')
+        .substring(0, 100);
+
+    const articleStatus = status || 'draft';
 
     const { data: article, error } = await supabase
       .from('articles')
       .insert({
         title,
         slug: articleSlug,
+        short_description: short_description || excerpt || null,
         excerpt: excerpt || null,
-        content: content || {},
-        category_id,
-        status: status || 'DRAFT',
+        content: content || '',
+        category_id: category_id || null,
+        author_id: author_id || null,
+        status: articleStatus,
         is_featured: is_featured || false,
         is_breaking: is_breaking || false,
-        author_id,
-        meta_title: meta_title || null,
-        meta_description: meta_description || null,
-        published_at: status === 'PUBLISHED' ? new Date().toISOString() : null,
-        view_count: 0,
-        word_count: content ? JSON.stringify(content).split(' ').length : 0,
-        reading_time: 1,
-        visibility: 'PUBLIC',
-        priority: 'NORMAL',
+        is_trending: is_trending || false,
+        seo_title: seo_title || null,
+        seo_description: seo_description || null,
+        published_at: articleStatus === 'published' ? new Date().toISOString() : null,
+        visibility: 'public',
+        views: 0,
+        likes: 0,
+        shares: 0,
+        comments_count: 0,
+        reading_time: Math.max(1, Math.ceil((content?.length || 0) / 1500)),
       })
       .select()
       .single();
 
     if (error) {
-      console.error('Article create error:', error.message);
+      console.error('[API] Article create error:', error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Attach tags if provided
+    if (tags && Array.isArray(tags) && tags.length > 0 && article) {
+      const tagRows = tags.map((tagId: string) => ({
+        article_id: article.id,
+        tag_id: tagId,
+      }));
+      await supabase.from('article_tags').insert(tagRows);
     }
 
     return NextResponse.json({ data: article, success: true });

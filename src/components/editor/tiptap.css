@@ -1,0 +1,26 @@
+.is-editor-empty:first-child::before {
+  color: #9ca3af;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.dark .is-editor-empty:first-child::before {
+  color: #52525b;
+}
+
+/* TipTap Prose Overrides */
+.ProseMirror {
+  outline: none;
+}
+.ProseMirror p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #a1a1aa;
+  pointer-events: none;
+  height: 0;
+}

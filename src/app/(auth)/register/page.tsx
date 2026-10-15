@@ -10,6 +10,7 @@ import { registerSchema } from '@/features/auth/schemas';
 import { signUp } from '@/features/auth/actions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { Eye, EyeOff } from 'lucide-react';
 
 // Extend registerSchema with client-side confirmPassword validation
 const clientRegisterSchema = registerSchema.extend({
@@ -24,6 +25,8 @@ type ClientRegisterInput = z.infer<typeof clientRegisterSchema>;
 export default function RegisterPage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
 
   const {
     register,
@@ -103,13 +106,23 @@ export default function RegisterPage() {
           <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">
             Password
           </label>
-          <input
-            type="password"
-            required
-            {...register('password')}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600"
-            placeholder="••••••••"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              required
+              {...register('password')}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600 pr-10"
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300 transition-colors"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {errors.password && (
             <p className="text-xs text-red-500 font-semibold">{errors.password.message}</p>
           )}
@@ -119,13 +132,23 @@ export default function RegisterPage() {
           <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">
             Confirm Password
           </label>
-          <input
-            type="password"
-            required
-            {...register('confirmPassword')}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600"
-            placeholder="••••••••"
-          />
+          <div className="relative">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              required
+              {...register('confirmPassword')}
+              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm placeholder-zinc-400 focus:border-red-500 focus:outline-none dark:border-zinc-850 dark:bg-zinc-950 dark:placeholder-zinc-600 pr-10"
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300 transition-colors"
+              tabIndex={-1}
+            >
+              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
           {errors.confirmPassword && (
             <p className="text-xs text-red-500 font-semibold">{errors.confirmPassword.message}</p>
           )}

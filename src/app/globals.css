@@ -21,7 +21,7 @@
 
   /* Neutral */
   --kc-white:      #FFFFFF;
-  --kc-bg:         #F7F9FC;
+  --kc-bg:         #FFFFFF;
   --kc-bg-card:    #FFFFFF;
   --kc-gray-50:    #F8FAFC;
   --kc-gray-100:   #F0F2F5;
@@ -41,7 +41,7 @@
   --kc-danger:     #FF1744;
 
   /* Background / Foreground (light) */
-  --background:    #F7F9FC;
+  --background:    #FFFFFF;
   --foreground:    #0F172A;
   --card-bg:       #FFFFFF;
   --border:        #E4E7EB;
@@ -497,21 +497,32 @@ body {
   font-size: 10px;
 }
 
-/* ── Bottom Nav (Mobile) ── */
+/* ── Liquid Glass Floating Bottom Nav (Mobile) ── */
 .mobile-bottom-nav {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: var(--z-header);
-  background: var(--card-bg);
-  border-top: 1px solid var(--border);
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 24px);
+  max-width: 480px;
+  z-index: 999;
+  background: rgba(13, 21, 38, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-radius: 28px;
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  padding: 8px 10px;
+  backdrop-filter: blur(28px) saturate(210%);
+  -webkit-backdrop-filter: blur(28px) saturate(210%);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root:not(.dark) .mobile-bottom-nav {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 36px rgba(7, 19, 48, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 /* ── Safe Area ── */

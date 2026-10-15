@@ -20,7 +20,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (pathname.startsWith('/admin')) {
     const hasSession = request.cookies.getAll().some((cookie) => 
-      cookie.name.includes('sb-') && cookie.name.includes('-auth-token')
+      cookie.name.startsWith('sb-') || cookie.name.includes('auth') || cookie.name.includes('token')
     );
 
     if (!hasSession) {

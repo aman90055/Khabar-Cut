@@ -26,6 +26,45 @@ const NAV_CATEGORIES = [
   { label: 'वेब स्टोरीज़', href: '/web-stories', icon: BookOpen },
 ];
 
+const AAJTAK_SLIDER_CATEGORIES = [
+  { label: 'वेब स्टोरी', href: '/web-stories', icon: '⚡' },
+  { label: 'वीडियो', href: '/videos', icon: '▶️' },
+  { label: 'बिजनेस', href: '/business', icon: '💼' },
+  { label: 'AI', href: '/ai', icon: '🤖' },
+  { label: 'इन्फ़ॉर्मेशन', href: '/information', icon: 'ℹ️' },
+  { label: 'विश्व', href: '/world', icon: '🌍' },
+  { label: 'जुर्म', href: '/crime', icon: '⚖️' },
+  { label: 'टेक्नोलॉजी', href: '/technology', icon: '💻' },
+  { label: 'आगामी चुनाव', href: '/elections', icon: '🗳️' },
+  { label: 'पिछले चुनाव', href: '/archive', icon: '📜' },
+  { label: 'सैर-सपाटा', href: '/travel', icon: '✈️' },
+  { label: 'एजुकेशन', href: '/education', icon: '🎓' },
+  { label: 'डिफेंस न्यूज', href: '/defence', icon: '🛡️' },
+  { label: 'कला-संस्कृति', href: '/culture', icon: '🎨' },
+  { label: 'Explained', href: '/explained', icon: '💡' },
+  { label: 'कार्यक्रम', href: '/programmes', icon: '🎙️' },
+  { label: 'साइंस न्यूज़', href: '/science', icon: '🔬' },
+  { label: 'फुल कवरेज', href: '/full-coverage', icon: '📌' },
+  { label: 'इन्टरैक्टिव', href: '/interactive', icon: '📊' },
+  { label: 'ऑटो', href: '/auto', icon: '🚗' },
+  { label: 'ट्रेंडिंग', href: '/trending', icon: '🔥' },
+  { label: 'फैक्ट चेक', href: '/fact-check', icon: '✅' },
+  { label: 'हेल्थ', href: '/health', icon: '🏥' },
+  { label: 'कृषि समाचार', href: '/agriculture', icon: '🌾' },
+  { label: 'लीगल न्यूज़', href: '/legal', icon: '👨‍⚖️' },
+  { label: 'फोटो', href: '/photos', icon: '🖼️' },
+  { label: 'आपका पेज', href: '/foryou', icon: '⭐' },
+  { label: 'पेट्रोल-डीजल', href: '/fuel-price', icon: '⛽' },
+  { label: 'मौसम', href: '/weather', icon: '☀️' },
+  { label: 'साहित्य', href: '/literature', icon: '📚' },
+  { label: 'एंकर्स', href: '/anchors', icon: '🎤' },
+  { label: 'अर्काइव', href: '/archive', icon: '📁' },
+  { label: 'गेम्स', href: '/games', icon: '🎮' },
+  { label: 'বাংলা', href: 'https://bangla.aajtak.in/', icon: '🌐' },
+  { label: 'रेट कार्ड', href: '/rate-card', icon: '💳' },
+  { label: 'निवेशक (Investor)', href: '/investor', icon: '📈' },
+];
+
 const MEGA_MENU_ITEMS = [
   { section: 'समाचार', items: [
     { label: 'राष्ट्रीय', href: '/national', icon: '🇮🇳' },
@@ -164,6 +203,43 @@ export function Header() {
 
   return (
     <>
+      {/* ── Exact AajTak Style Network Bar ── */}
+      <div className="bg-white dark:bg-[#070c18] border-b border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 text-[11px] font-medium py-1 px-4 hidden md:block no-print select-none">
+        <div className="mx-auto max-w-[1440px] flex items-center justify-between">
+          <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide py-0.5">
+            <span className="text-gray-500 font-normal shrink-0">Aug 14, 2026 | 13:24 IST</span>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/" className="font-bold text-[#D90429] hover:underline shrink-0">Khabar Cut</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/epaper" className="hover:text-[#D90429] shrink-0">ई-पेपर</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/hi" className="hover:text-[#D90429] shrink-0">हिंदी</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <a href="https://indiatoday.in" target="_blank" rel="noopener noreferrer" className="hover:text-[#D90429] shrink-0">India Today</a>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/business" className="hover:text-[#D90429] shrink-0">Business Today</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/lallantop" className="hover:text-[#D90429] shrink-0">Lallantop</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/sports" className="hover:text-[#D90429] shrink-0">SportsTak</Link>
+            <span className="text-gray-300 dark:text-gray-700">|</span>
+            <Link href="/agriculture" className="hover:text-[#D90429] shrink-0">KisanTak</Link>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {user ? (
+              <Link href="/profile" className="flex items-center gap-1.5 bg-[#D90429] text-white px-3 py-1 rounded text-xs font-bold shadow-sm hover:bg-[#b00320] transition-all">
+                <span>👤</span> {user.fullName ? user.fullName.split(' ')[0] : 'User'}
+              </Link>
+            ) : (
+              <Link href="/login" className="flex items-center gap-1.5 bg-[#D90429] text-white px-3.5 py-1 rounded text-xs font-bold shadow-sm hover:bg-[#b00320] transition-all">
+                Sign In 👤
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ── Breaking News Ticker ── */}
       <div className="bg-[#D90429] text-white h-9 flex items-center overflow-hidden z-50 relative no-print">
         <div className="flex items-center gap-0 h-full shrink-0">
@@ -398,6 +474,34 @@ export function Header() {
               >
                 {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── AajTak Style Horizontal Category Slider Bar ── */}
+        <div className="bg-white dark:bg-[#050A14] border-t border-b border-gray-200/50 dark:border-white/10 py-2 px-4 no-print select-none shadow-sm">
+          <div className="mx-auto max-w-[1440px] flex items-center gap-2 relative">
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-0.5 px-1 scroll-smooth w-full select-none">
+              {AAJTAK_SLIDER_CATEGORIES.map((cat, idx) => {
+                const isActive = pathname === cat.href;
+                const isExternal = cat.href.startsWith('http');
+                const Element = isExternal ? 'a' : Link;
+                return (
+                  <Element
+                    key={idx}
+                    href={cat.href}
+                    {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-extrabold transition-all duration-200 shadow-sm border ${
+                      isActive
+                        ? 'bg-[#D90429] text-white border-[#D90429] shadow-red-500/20'
+                        : 'bg-white dark:bg-white/5 text-gray-800 dark:text-gray-200 border-gray-200/80 dark:border-white/10 hover:border-[#D90429] hover:text-[#D90429] dark:hover:text-white'
+                    }`}
+                  >
+                    <span className="text-xs">{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </Element>
+                );
+              })}
             </div>
           </div>
         </div>

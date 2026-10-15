@@ -164,6 +164,7 @@ export const ROLE_PERMISSIONS: Record<RoleSlug, string[]> = Object.keys(ROLE_LEV
 );
 
 export function hasPermission(userRole: string, resource: string, action: string): boolean {
+  if (userRole === 'super-admin') return true;
   const role = userRole as RoleSlug;
   const permissions = ROLE_PERMISSIONS[role];
   if (!permissions) return false;

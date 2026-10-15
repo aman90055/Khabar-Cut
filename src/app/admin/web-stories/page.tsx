@@ -1,34 +1,32 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { createClient } from '@/lib/supabase/server';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Plus, Trash2, Eye } from 'lucide-react';
-import { format } from 'date-fns';
-import { deleteWebStory } from '@/features/web-stories/actions';
+import { BookOpen, Plus, Trash2 } from 'lucide-react';
+import { revalidatePath } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
 export default async function WebStoriesAdminPage() {
-  const stories = await prisma.webStory.findMany({
-    where: { deletedAt: null },
-    include: {
-      author: {
-        include: {
-          user: { select: { fullName: true } },
-        },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
+  
+  const { data: stories, error } = await supabase
+    .from('web_stories')
+    .select(`
+      *,
+      web_story_slides(count)
+    `)
+    .order('created_at', { ascending: false });
 
-  const serializedStories = serializeBigInt(stories);
+  const serializedStories = stories || [];
 
   async function handleDelete(id: string) {
     'use server';
-    await deleteWebStory(id);
+    const supabase = await createClient();
+    await supabase.from('web_stories').delete().eq('id', id);
+    revalidatePath('/admin/web-stories');
   }
 
   return (
@@ -59,8 +57,8 @@ export default async function WebStoriesAdminPage() {
           {serializedStories.map((story: any) => (
             <Card key={story.id} className="group overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex flex-col justify-between">
               <div className="aspect-[9/16] relative bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
-                {story.coverImage ? (
-                  <img src={story.coverImage} alt={story.title} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                {story.cover_image_url ? (
+                  <img src={story.cover_image_url} alt={story.title} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
                 ) : (
                   <div className="h-full w-full flex items-center justify-center bg-zinc-900">
                     <BookOpen className="h-12 w-12 text-zinc-700" />
@@ -69,7 +67,7 @@ export default async function WebStoriesAdminPage() {
                 {/* Status */}
                 <div className="absolute top-3 left-3">
                   <Badge className={`border-none font-bold text-[8px] uppercase ${
-                    story.status === 'PUBLISHED'
+                    story.status === 'published'
                       ? 'bg-emerald-500 text-white'
                       : 'bg-zinc-500 text-white'
                   }`}>
@@ -82,11 +80,11 @@ export default async function WebStoriesAdminPage() {
                   <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-50 leading-snug line-clamp-2" title={story.title}>
                     {story.title}
                   </h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Slides: {Array.isArray(story.slides) ? story.slides.length : 0}</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Slides: {story.web_story_slides?.[0]?.count || 0}</p>
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                  <span className="text-[9px] text-zinc-400 font-semibold">{story.author?.displayName || 'Editorial'}</span>
+                  <span className="text-[9px] text-zinc-400 font-semibold">Editorial</span>
                   <form action={handleDelete.bind(null, story.id)}>
                     <Button variant="ghost" size="sm" type="submit" className="h-7 w-7 p-0 text-red-500 hover:text-red-600">
                       <Trash2 className="h-3.5 w-3.5" />

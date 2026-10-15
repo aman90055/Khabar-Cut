@@ -2,8 +2,10 @@ import type { ReactNode } from 'react';
 import { Header } from '@/components/layout/header';
 import { AdminSidebar } from '@/components/layout/admin-sidebar';
 import { AIAssistant } from '@/components/admin/ai-assistant';
+import { requireAuth } from '@/middleware/rbac';
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  await requireAuth();
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       {/* Sidebar: hidden on mobile, visible md+ */}

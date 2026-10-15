@@ -1,14 +1,17 @@
 import { headers } from 'next/headers';
-import { prisma } from '@/lib/prisma';
-import type { Prisma } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
+
+import { createAdminClient } from '@/lib/supabase/admin';
+
+const adminSupabase = createAdminClient();
 
 interface AuditLogParams {
   userId?: string;
   action: string;
   entityType: string;
   entityId: string;
-  oldValues?: Prisma.InputJsonValue;
-  newValues?: Prisma.InputJsonValue;
+  oldValues?: any;
+  newValues?: any;
   request?: Request;
 }
 
@@ -33,18 +36,24 @@ export async function createAuditLog(params: AuditLogParams) {
     ipAddress = ipAddress.split(',')[0].trim();
   }
 
-  return prisma.auditLog.create({
-    data: {
+  const { data, error } = await adminSupabase
+    .from('audit_logs')
+    .insert({
       action: params.action,
-      entityType: params.entityType,
-      entityId: params.entityId,
-      oldValues: params.oldValues ?? undefined,
-      newValues: params.newValues ?? undefined,
-      ipAddress,
-      userAgent,
-      ...(params.userId && {
-        user: { connect: { id: params.userId } },
-      }),
-    },
-  });
+      entity_type: params.entityType,
+      entity_id: params.entityId,
+      old_values: params.oldValues ?? null,
+      new_values: params.newValues ?? null,
+      ip_address: ipAddress,
+      user_agent: userAgent,
+      user_id: params.userId || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Failed to write audit log via Supabase:', error);
+  }
+
+  return data;
 }

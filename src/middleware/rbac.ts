@@ -3,10 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { UnauthorizedError, ForbiddenError } from '@/lib/errors';
 import { hasPermission } from '@/config/permissions';
 
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { createAdminClient } from '@/lib/supabase/admin';
+
+const adminSupabase = createAdminClient();
 
 export async function requireAuth() {
   const authUser = await getAuthUser();
@@ -48,6 +47,10 @@ export async function requireAuth() {
 export async function requireRole(minimumLevel: number) {
   const user = await requireAuth();
   
+  if (user.role.slug === 'super-admin' || user.role.level === 0) {
+    return user;
+  }
+
   if (user.role.level > minimumLevel) {
     throw new ForbiddenError('You do not have the required access level');
   }
@@ -58,6 +61,10 @@ export async function requireRole(minimumLevel: number) {
 export async function requirePermission(resource: string, action: string) {
   const user = await requireAuth();
   
+  if (user.role.slug === 'super-admin' || user.role.level === 0) {
+    return user;
+  }
+
   const allowed = hasPermission(user.role.slug, resource, action);
   if (!allowed) {
     throw new ForbiddenError(`Missing permission: ${resource}:${action}`);

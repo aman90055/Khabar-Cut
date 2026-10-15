@@ -1,74 +1,71 @@
-import * as React from 'react';
+import { getAllStates } from '@/lib/db/states';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { MapPin, ArrowRight } from 'lucide-react';
+import { SidebarAd } from '@/components/ads/google-ad';
+import type { Metadata } from 'next';
+import { MapPin } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
+export const metadata: Metadata = {
+  title: 'राज्य समाचार | Khabar Cut',
+  description: 'सभी राज्यों की ताज़ा खबरें',
+};
 
-export default async function PublicStatesPage() {
-  const states = await prisma.state.findMany({
-    where: { isActive: true, deletedAt: null },
-    include: {
-      _count: { select: { districts: true, articles: true } },
-    },
-    orderBy: { sortOrder: 'asc' },
-  }).catch(() => []);
+const FALLBACK_STATES = [
+  { id: '1', name: 'झारखंड', slug: 'jharkhand', code: 'JH', is_active: true, created_at: '' },
+  { id: '2', name: 'बिहार', slug: 'bihar', code: 'BR', is_active: true, created_at: '' },
+  { id: '3', name: 'उत्तर प्रदेश', slug: 'uttar-pradesh', code: 'UP', is_active: true, created_at: '' },
+  { id: '4', name: 'दिल्ली', slug: 'delhi', code: 'DL', is_active: true, created_at: '' },
+  { id: '5', name: 'महाराष्ट्र', slug: 'maharashtra', code: 'MH', is_active: true, created_at: '' },
+  { id: '6', name: 'राजस्थान', slug: 'rajasthan', code: 'RJ', is_active: true, created_at: '' },
+  { id: '7', name: 'मध्य प्रदेश', slug: 'madhya-pradesh', code: 'MP', is_active: true, created_at: '' },
+  { id: '8', name: 'छत्तीसगढ़', slug: 'chhattisgarh', code: 'CG', is_active: true, created_at: '' },
+  { id: '9', name: 'पश्चिम बंगाल', slug: 'west-bengal', code: 'WB', is_active: true, created_at: '' },
+  { id: '10', name: 'ओडिशा', slug: 'odisha', code: 'OD', is_active: true, created_at: '' },
+];
 
-  const serializedStates = serializeBigInt(states);
+export default async function StatesPage() {
+  const dbStates = await getAllStates();
+  const states = dbStates.length > 0 ? dbStates : FALLBACK_STATES;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-      {/* Page Header */}
-      <div>
-        <div className="flex items-center gap-2 text-xs font-black uppercase text-red-600 tracking-wider">
-          <MapPin className="h-4 w-4" /> Regional Network
+    <main className="container mx-auto px-4 py-8">
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex-1">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+              <MapPin className="h-8 w-8 text-primary" />
+              राज्य समाचार
+            </h1>
+            <p className="text-muted-foreground">सभी राज्यों की ताज़ा खबरें और अपडेट्स</p>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {states.map((state) => (
+              <Link
+                key={state.id}
+                href={`/states/${state.slug}`}
+                className="group p-6 rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm hover:bg-primary/10 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold group-hover:text-primary transition-colors">
+                      {state.name}
+                    </h2>
+                    {state.code && (
+                      <p className="text-sm text-muted-foreground uppercase">{state.code}</p>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50 mt-1">
-          State & District News Hubs
-        </h1>
-        <p className="text-sm text-zinc-500 mt-2 max-w-xl">
-          Get hyper-local news reporting, regional developments, election tracks, and administrative bulletins. Select your state below.
-        </p>
+        
+        <aside className="lg:w-[300px] xl:w-[336px]">
+          <div className="sticky top-24">
+            <SidebarAd />
+          </div>
+        </aside>
       </div>
-
-      {/* Grid of states */}
-      {serializedStates.length === 0 ? (
-        <div className="text-center py-20 border border-dashed rounded-3xl bg-zinc-50/50 dark:bg-zinc-900/10">
-          <MapPin className="h-12 w-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
-          <h3 className="text-base font-extrabold mt-4 text-zinc-900 dark:text-zinc-50">No Regional Hubs Configured</h3>
-          <p className="text-xs text-zinc-500 mt-1">Regional sections are being initialized. Check back shortly!</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {serializedStates.map((st: any) => (
-            <Link key={st.id} href={`/states/${st.slug}`}>
-              <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden hover:shadow-md hover:border-red-500/30 transition-all group">
-                <CardContent className="p-6 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-lg font-bold text-zinc-950 dark:text-zinc-50 leading-snug group-hover:text-red-600 transition-colors">
-                      {st.name}
-                    </h3>
-                    <Badge variant="outline" className="font-mono text-[9px] uppercase font-bold">
-                      {st.code}
-                    </Badge>
-                  </div>
-                  <div className="flex justify-between items-center text-[11px] text-zinc-400 font-bold uppercase">
-                    <span>{st._count.districts} reporting districts</span>
-                    <span>•</span>
-                    <span>{st._count.articles} articles</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-red-500 font-bold group-hover:translate-x-1.5 transition-transform pt-1">
-                    Explore Local News <ArrowRight className="h-4 w-4" />
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+    </main>
   );
 }

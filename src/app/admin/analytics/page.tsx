@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { getSiteSummary, getTopArticles, getDailyStats } from '@/server/db/analytics';
 import { BarChart3, TrendingUp, Users, Eye, Globe, Smartphone, Laptop, Tablet } from 'lucide-react';
 import { subDays } from 'date-fns';
+import { RecalculateTrendingButton } from './recalculate-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,9 +29,14 @@ export default async function AnalyticsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Analytics Dashboard</h1>
-        <p className="text-sm text-zinc-500 mt-1">Platform performance, traffic patterns and most-read stories over the last 30 days.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Analytics Dashboard</h1>
+          <p className="text-sm text-zinc-500 mt-1">Platform performance, traffic patterns and most-read stories over the last 30 days.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RecalculateTrendingButton />
+        </div>
       </div>
 
       {/* Overview stats */}

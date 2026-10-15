@@ -5,18 +5,13 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function getDatabaseUrl() {
+  // Priority 1: DIRECT_URL (session mode pooler, port 5432)
+  const directUrl = process.env.DIRECT_URL;
+  if (directUrl) return directUrl;
+
+  // Priority 2: DATABASE_URL
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
-
-  // Automatically rewrite connection string to use project-specific IPv4 pooler on port 6543
-  // with correct user format: postgres.wpqpcdqgovgflrpusgkx
-  if (
-    url.includes('db.wpqpcdqgovgflrpusgkx.supabase.co:5432') ||
-    url.includes('db.wpqpcdqgovgflrpusgkx.supabase.co:6543') ||
-    (url.includes('pooler.supabase.com') && !url.includes('postgres.wpqpcdqgovgflrpusgkx'))
-  ) {
-    return "postgresql://postgres.wpqpcdqgovgflrpusgkx:UzhM6jciYu%2FT2%24n@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1";
-  }
 
   return url;
 }
@@ -29,10 +24,11 @@ export const prisma =
     datasources: dbUrl ? { db: { url: dbUrl } } : undefined,
     log:
       process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
+        ? ['error', 'warn']
         : ['error'],
   });
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
+

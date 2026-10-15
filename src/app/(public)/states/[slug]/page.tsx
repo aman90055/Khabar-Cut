@@ -1,151 +1,142 @@
-import * as React from 'react';
-import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { getStateBySlug, getDistrictsByState } from '@/lib/db/states';
+import { getPublishedArticles } from '@/lib/db/articles';
 import { notFound } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { MapPin, Clock, Eye, ArrowLeft, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
+import Image from 'next/image';
 import { format } from 'date-fns';
+import { hi } from 'date-fns/locale';
+import { SidebarAd } from '@/components/ads/google-ad';
+import type { Metadata } from 'next';
+import { Clock, User } from 'lucide-react';
+import type { ArticleListItem } from '@/types/supabase';
 
-export const dynamic = 'force-dynamic';
+// Helper functions
+const imgUrl = (article: any) => 
+  article.featured_image?.public_url || article.featuredImage?.url || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&q=80';
+const authorName = (article: any) => 
+  article.author?.display_name || article.author?.fullName || 'खबर कट';
+const pubDate = (article: any) => 
+  article.published_at ? format(new Date(article.published_at), 'dd MMM yyyy', { locale: hi }) : '';
 
-interface PageParams {
+const FALLBACK_STATES = [
+  { id: '1', name: 'झारखंड', slug: 'jharkhand', code: 'JH', is_active: true, created_at: '' },
+  { id: '2', name: 'बिहार', slug: 'bihar', code: 'BR', is_active: true, created_at: '' },
+  { id: '3', name: 'उत्तर प्रदेश', slug: 'uttar-pradesh', code: 'UP', is_active: true, created_at: '' },
+  { id: '4', name: 'दिल्ली', slug: 'delhi', code: 'DL', is_active: true, created_at: '' },
+  { id: '5', name: 'महाराष्ट्र', slug: 'maharashtra', code: 'MH', is_active: true, created_at: '' },
+  { id: '6', name: 'राजस्थान', slug: 'rajasthan', code: 'RJ', is_active: true, created_at: '' },
+  { id: '7', name: 'मध्य प्रदेश', slug: 'madhya-pradesh', code: 'MP', is_active: true, created_at: '' },
+  { id: '8', name: 'छत्तीसगढ़', slug: 'chhattisgarh', code: 'CG', is_active: true, created_at: '' },
+  { id: '9', name: 'पश्चिम बंगाल', slug: 'west-bengal', code: 'WB', is_active: true, created_at: '' },
+  { id: '10', name: 'ओडिशा', slug: 'odisha', code: 'OD', is_active: true, created_at: '' },
+];
+
+type Props = {
   params: Promise<{ slug: string }>;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  let state = await getStateBySlug(slug);
+  if (!state) {
+    state = FALLBACK_STATES.find((s) => s.slug === slug) as any;
+  }
+  return {
+    title: `${state?.name || slug} समाचार | Khabar Cut`,
+    description: `${state?.name || slug} की ताज़ा खबरें, विश्लेषण और विशेष रिपोर्ट।`,
+  };
 }
 
-export default async function StateDetailPage({ params }: PageParams) {
+export default async function StatePage({ params }: Props) {
   const { slug } = await params;
-
-  // Fetch state details
-  const state = await prisma.state.findFirst({
-    where: { slug, isActive: true, deletedAt: null },
-    include: {
-      districts: {
-        where: { isActive: true, deletedAt: null },
-        orderBy: { name: 'asc' },
-      },
-    },
-  }).catch(() => null);
-
+  
+  let state = await getStateBySlug(slug);
+  
   if (!state) {
-    notFound();
+    const fallbackState = FALLBACK_STATES.find(s => s.slug === slug);
+    if (!fallbackState) {
+      notFound();
+    }
+    state = fallbackState as any;
   }
 
-  // Fetch articles belonging to this state
-  const articles = await prisma.article.findMany({
-    where: { stateId: state.id, status: 'PUBLISHED', deletedAt: null },
-    include: {
-      category: { select: { name: true, slug: true } },
-      author: { select: { fullName: true } },
-      featuredImage: { select: { url: true, altText: true } },
-    },
-    orderBy: { publishedAt: 'desc' },
-  }).catch(() => []);
-
-  const serializedState = serializeBigInt(state);
-  const serializedArticles = serializeBigInt(articles);
+  const articles = await getPublishedArticles({ categorySlug: slug, limit: 12 });
+  const districts = await getDistrictsByState(state!.id);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-      {/* Back button */}
-      <div className="flex items-center gap-3">
-        <Link
-          href="/states"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-950 dark:hover:text-zinc-50 uppercase tracking-wider transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> All States
-        </Link>
-      </div>
-
-      {/* State Hero / Title */}
-      <div className="border-b pb-6 space-y-3">
-        <div className="flex items-center gap-2">
-          <Badge className="bg-red-600 border-none font-bold uppercase tracking-wider text-[9px] py-1">
-            {serializedState.code} Hub
-          </Badge>
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight">
-          {serializedState.name} Local News
-        </h1>
-        <p className="text-sm text-zinc-500 max-w-xl">
-          Continuous coverage of administrative bulletins, local assembly updates, crime files, business, and community stories across {serializedState.name}.
-        </p>
-      </div>
-
-      {/* District quick filter grid */}
-      {serializedState.districts.length > 0 && (
-        <div className="space-y-3 bg-zinc-50 dark:bg-zinc-900/35 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-          <h3 className="text-xs font-black uppercase tracking-wider text-zinc-400">Jump to District</h3>
-          <div className="flex flex-wrap gap-2">
-            {serializedState.districts.map((dist: any) => (
-              <Link key={dist.id} href={`/districts/${dist.slug}`}>
-                <Button variant="outline" size="sm" className="h-8 font-semibold text-xs rounded-xl bg-white dark:bg-zinc-950">
-                  {dist.name}
-                </Button>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Article Feed grid */}
-      {serializedArticles.length === 0 ? (
-        <div className="text-center py-20 border border-dashed rounded-3xl bg-zinc-50/50 dark:bg-zinc-900/10">
-          <MapPin className="h-12 w-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
-          <h3 className="text-base font-extrabold mt-4 text-zinc-900 dark:text-zinc-50">No Local Articles</h3>
-          <p className="text-xs text-zinc-500 mt-1">There are no reports filed for {serializedState.name} today. Check back shortly!</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {serializedArticles.map((art: any) => (
-            <Card key={art.id} className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden flex flex-col justify-between hover:shadow-md group">
-              {/* Optional featured image */}
-              {art.featuredImage?.url && (
-                <div className="aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 border-b">
-                  <img
-                    src={art.featuredImage.url}
-                    alt={art.featuredImage.altText || art.title}
-                    className="h-full w-full object-cover group-hover:scale-103 transition-transform duration-300"
-                  />
-                </div>
-              )}
-
-              <CardContent className="p-5 flex-1 flex flex-col justify-between gap-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-[10px] text-zinc-400 font-bold uppercase">
-                    <span className="text-red-500">{art.category?.name}</span>
-                    <span>By {art.author?.fullName}</span>
-                  </div>
-                  <h3 className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50 leading-snug line-clamp-2 group-hover:text-red-600 transition-colors">
-                    <Link href={`/${art.category?.slug}/${art.slug}`}>
-                      {art.title}
-                    </Link>
-                  </h3>
-                  {art.excerpt && (
-                    <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2">
-                      {art.excerpt}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-850">
-                  <span className="text-[10px] text-zinc-400 font-semibold flex items-center gap-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    {format(new Date(art.publishedAt || art.createdAt), 'dd MMM yyyy')}
-                  </span>
-                  <Link href={`/${art.category?.slug}/${art.slug}`}>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs font-bold gap-1 p-0 hover:bg-transparent text-red-500">
-                      Read Report <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
+    <main className="container mx-auto px-4 py-8">
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex-1">
+          <h1 className="text-4xl font-bold mb-6">{state?.name} समाचार</h1>
+          
+          {districts && districts.length > 0 && (
+            <div className="mb-8 overflow-x-auto pb-4 hide-scrollbar">
+              <div className="flex gap-2">
+                {districts.map((district) => (
+                  <Link
+                    key={district.id}
+                    href={`/districts/${district.slug}`}
+                    className="whitespace-nowrap px-4 py-2 rounded-full border border-white/10 bg-white/5 hover:bg-primary/20 hover:text-primary transition-colors text-sm"
+                  >
+                    {district.name}
                   </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                ))}
+              </div>
+            </div>
+          )}
+
+          {articles.length === 0 ? (
+            <div className="p-8 text-center rounded-xl border border-white/10 bg-white/5">
+              <p className="text-xl text-muted-foreground">अभी कोई खबर नहीं है</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {articles.map((article: any) => (
+                <Link
+                  key={article.id}
+                  href={`/${article.category?.slug || 'news'}/${article.slug}`}
+                  className="group rounded-xl border border-white/10 bg-white/5 overflow-hidden flex flex-col hover:border-primary/50 transition-colors"
+                >
+                  <div className="aspect-[16/9] relative overflow-hidden">
+                    <Image
+                      src={imgUrl(article)}
+                      alt={article.title || ''}
+                      fill
+                      className="object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    {article.category && (
+                      <span className="absolute top-4 left-4 px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
+                        {article.category.name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4 flex flex-col flex-1">
+                    <h3 className="text-lg font-bold mb-3 group-hover:text-primary transition-colors line-clamp-2">
+                      {article.title}
+                    </h3>
+                    <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {authorName(article)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {pubDate(article)}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-    </div>
+        
+        <aside className="lg:w-[300px] xl:w-[336px]">
+          <div className="sticky top-24">
+            <SidebarAd />
+          </div>
+        </aside>
+      </div>
+    </main>
   );
 }

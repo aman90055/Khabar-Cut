@@ -8,46 +8,55 @@ const supabase = createClient(
 
 export async function GET() {
   try {
+    // Run all counts in parallel
     const [
       { count: totalArticles },
       { count: publishedArticles },
       { count: draftArticles },
-      { count: totalUsers },
+      { count: reviewArticles },
+      { count: scheduledArticles },
+      { count: breakingActive },
+      { data: topArticles },
       { data: recentArticles },
-      { data: topAuthors },
     ] = await Promise.all([
-      supabase.from('articles').select('*', { count: 'exact', head: true }).is('deleted_at', null),
-      supabase.from('articles').select('*', { count: 'exact', head: true }).eq('status', 'PUBLISHED').is('deleted_at', null),
-      supabase.from('articles').select('*', { count: 'exact', head: true }).eq('status', 'DRAFT').is('deleted_at', null),
-      supabase.from('users').select('*', { count: 'exact', head: true }).is('deleted_at', null),
-      supabase.from('articles')
-        .select(`id, title, slug, status, published_at, created_at, view_count, categories:category_id(name), author:author_id(full_name)`)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(6),
-      supabase.from('users')
-        .select(`id, full_name, email, avatar_url, role:role_id(name, slug)`)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(5),
+      supabase.from('articles').select('id', { count: 'exact', head: true }),
+      supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'PUBLISHED'),
+      supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT'),
+      supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'REVIEW'),
+      supabase.from('articles').select('id', { count: 'exact', head: true }).eq('status', 'SCHEDULED'),
+      supabase.from('breaking_news').select('id', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('articles').select('id, title, slug, views:view_count, category:categories!category_id(name, slug)').eq('status', 'PUBLISHED').order('view_count', { ascending: false }).limit(5),
+      supabase.from('articles').select('id, title, slug, status, published_at, created_at, views:view_count, category:categories!category_id(name, slug), author:users!author_id(display_name:full_name)').order('created_at', { ascending: false }).limit(8),
     ]);
+
+    // Total views sum
+    const { data: viewsData } = await supabase.from('articles').select('view_count').eq('status', 'PUBLISHED');
+    const totalViews = viewsData?.reduce((sum, a: any) => sum + (a.view_count || 0), 0) ?? 0;
+
+    // Today's articles count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const { count: todayArticles } = await supabase
+      .from('articles')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', today.toISOString());
 
     return NextResponse.json({
       stats: {
         totalArticles: totalArticles ?? 0,
         publishedArticles: publishedArticles ?? 0,
         draftArticles: draftArticles ?? 0,
-        totalUsers: totalUsers ?? 0,
+        reviewArticles: reviewArticles ?? 0,
+        scheduledArticles: scheduledArticles ?? 0,
+        breakingActive: breakingActive ?? 0,
+        totalViews,
+        todayArticles: todayArticles ?? 0,
       },
+      topArticles: topArticles ?? [],
       recentArticles: recentArticles ?? [],
-      topAuthors: topAuthors ?? [],
     });
   } catch (err) {
-    console.error('Dashboard stats error:', err);
-    return NextResponse.json({
-      stats: { totalArticles: 0, publishedArticles: 0, draftArticles: 0, totalUsers: 0 },
-      recentArticles: [],
-      topAuthors: [],
-    });
+    console.error('[Stats API]', err);
+    return NextResponse.json({ stats: {}, topArticles: [], recentArticles: [] });
   }
 }

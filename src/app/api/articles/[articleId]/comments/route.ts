@@ -1,75 +1,81 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const postCommentSchema = z.object({
-  content: z.string().min(3).max(2000),
-  parentId: z.string().uuid().optional(),
+  author_name: z.string().min(1).max(100),
+  author_email: z.string().email(),
+  body: z.string().min(3).max(2000),
 });
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ articleId: string }> }
 ) {
-  const { articleId } = await params;
+  try {
+    const { articleId } = await params;
+    const supabase = await createClient();
 
-  const comments = await prisma.comment.findMany({
-    where: { articleId, status: 'APPROVED', deletedAt: null },
-    include: {
-      user: { select: { fullName: true, avatarUrl: true } },
-    },
-    orderBy: { createdAt: 'asc' },
-  }).catch(() => []);
+    const { data, error } = await supabase
+      .from('comments')
+      .select('id, author_name, body, created_at')
+      .eq('article_id', articleId)
+      .eq('status', 'APPROVED')
+      .order('created_at', { ascending: true });
 
-  return NextResponse.json({ data: comments });
+    if (error) {
+      console.error('Error fetching comments:', error);
+      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 });
+    }
+
+    return NextResponse.json({ data: data || [] });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
 }
 
 export async function POST(
-  request: NextRequest,
+  request: Request,
   { params }: { params: Promise<{ articleId: string }> }
 ) {
-  const { articleId } = await params;
-
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const dbUser = await prisma.user.findUnique({ where: { authId: user.id } }).catch(() => null);
-  if (!dbUser) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
-  }
-
-  let body: unknown;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    const { articleId } = await params;
+    
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    const parsed = postCommentSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
+    }
+
+    const supabase = await createClient();
+
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        article_id: articleId,
+        author_name: parsed.data.author_name,
+        author_email: parsed.data.author_email,
+        body: parsed.data.body,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error inserting comment:', error);
+      return NextResponse.json({ error: 'Failed to create comment' }, { status: 500 });
+    }
+
+    return NextResponse.json({ data }, { status: 201 });
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
-
-  const parsed = postCommentSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 422 });
-  }
-
-  const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] ?? '127.0.0.1';
-
-  const comment = await prisma.comment.create({
-    data: {
-      content: parsed.data.content,
-      articleId,
-      userId: dbUser.id,
-      parentId: parsed.data.parentId ?? null,
-      ipAddress,
-      status: 'PENDING',
-    },
-  }).catch(() => null);
-
-  if (!comment) {
-    return NextResponse.json({ error: 'Failed to create comment' }, { status: 500 });
-  }
-
-  return NextResponse.json({ data: comment }, { status: 201 });
 }

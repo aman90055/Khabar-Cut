@@ -9,6 +9,8 @@ import {
   Flame, Star, AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import { ImageUploader } from '@/components/editor/image-uploader';
+import { RichTextEditor } from '@/components/editor/rich-text-editor';
 
 interface Category { id: string; name: string; slug: string; }
 
@@ -42,6 +44,7 @@ export default function NewArticlePage() {
   const [metaTitle, setMetaTitle] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
   const [featuredImageUrl, setFeaturedImageUrl] = useState('');
+  const [featuredImageMediaId, setFeaturedImageMediaId] = useState<string | null>(null);
   const [tags, setTags] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -69,9 +72,7 @@ export default function NewArticlePage() {
     const errs: Record<string, string> = {};
     if (!title.trim()) errs.title = 'Title is required';
     if (!slug.trim()) errs.slug = 'Slug is required';
-    if (!categoryId) errs.categoryId = 'Please select a category';
     if (!body.trim()) errs.body = 'Article body is required';
-    if (!authorId) errs.author = 'You must be logged in to create articles';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -89,16 +90,22 @@ export default function NewArticlePage() {
         body: JSON.stringify({
           title: title.trim(),
           slug: slug.trim(),
+          // New schema: short_description is the summary field
+          short_description: excerpt.trim() || null,
           excerpt: excerpt.trim() || null,
-          content: { blocks: [{ type: 'paragraph', data: { text: body } }] },
-          category_id: categoryId,
-          status: submitStatus,
+          content: body,
+          category_id: categoryId || null,
+          // New schema uses lowercase status
+          status: submitStatus.toLowerCase(),
           is_featured: isFeatured,
           is_breaking: isBreaking,
           author_id: authorId,
-          meta_title: metaTitle.trim() || null,
-          meta_description: metaDescription.trim() || null,
-          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          // New schema: seo_title / seo_description
+          seo_title: metaTitle.trim() || null,
+          seo_description: metaDescription.trim() || null,
+          featured_image_url: featuredImageUrl || null,
+          featured_image_media_id: featuredImageMediaId || null,
+          tags: tags ? tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
         }),
       });
 
@@ -107,7 +114,7 @@ export default function NewArticlePage() {
         throw new Error(data.error || 'Failed to create article');
       }
 
-      toast.success(submitStatus === 'PUBLISHED' ? '🎉 Article published!' : '✅ Draft saved!');
+      toast.success(submitStatus === 'PUBLISHED' ? '🎉 Article published successfully!' : '✅ Draft saved!');
       router.push('/admin/articles');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Something went wrong';
@@ -216,23 +223,18 @@ export default function NewArticlePage() {
                 {wordCount} words · ~{readingTime} min read
               </span>
             </label>
-            <textarea
+            <RichTextEditor
               value={body}
-              onChange={e => setBody(e.target.value)}
-              placeholder="Write your article here...
-
-You can use multiple paragraphs. Add as much content as you need.
-The article will be formatted beautifully on the front-end."
-              rows={18}
-              className="w-full text-sm text-zinc-700 dark:text-zinc-300 placeholder-zinc-400 dark:placeholder-zinc-600 bg-transparent resize-y focus:outline-none leading-relaxed"
+              onChange={setBody}
+              placeholder="Write your article here..."
+              limit={20000}
             />
             {errors.body && (
               <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
                 <AlertCircle className="h-3 w-3" /> {errors.body}
               </p>
             )}
-            <div className="flex justify-between items-center mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-              <span className="text-[10px] text-zinc-400">{charCount} characters</span>
+            <div className="flex justify-end items-center mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <Link href="#" className="text-[10px] text-[#D90429] hover:underline flex items-center gap-1">
                 <Eye className="h-3 w-3" /> Preview
               </Link>
@@ -386,30 +388,17 @@ The article will be formatted beautifully on the front-end."
             )}
           </div>
 
-          {/* Featured Image */}
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Image className="h-4 w-4 text-zinc-500" />
-              <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Featured Image</span>
-            </div>
-            <input
-              type="url"
+          {/* Featured Image — drag & drop uploader */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5">
+            <ImageUploader
               value={featuredImageUrl}
-              onChange={e => setFeaturedImageUrl(e.target.value)}
-              placeholder="https://image-url.com/photo.jpg"
-              className="w-full text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:border-[#D90429] transition-all"
+              onChange={(url, mediaId) => {
+                setFeaturedImageUrl(url);
+                setFeaturedImageMediaId(mediaId ?? null);
+              }}
+              label="Featured Image"
+              hint="JPG, PNG, WebP — Max 10MB. Click or drag & drop."
             />
-            {featuredImageUrl && (
-              <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 aspect-video">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={featuredImageUrl}
-                  alt="Featured"
-                  className="w-full h-full object-cover"
-                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-              </div>
-            )}
           </div>
 
           {/* Tags */}

@@ -22,7 +22,7 @@ export async function GET(_request: Request) {
     const { data: dbUser, error: dbError } = await adminSupabase
       .from('users')
       .select(`
-        id, full_name, email, avatar_url, status,
+        id, full_name, email, avatar_url, is_active,
         role:role_id ( id, name, slug )
       `)
       .eq('auth_id', user.id)
@@ -39,8 +39,8 @@ export async function GET(_request: Request) {
         fullName: dbUser.full_name,
         email: dbUser.email,
         avatarUrl: dbUser.avatar_url,
-        status: dbUser.status,
-        role: dbUser.role,
+        isActive: dbUser.is_active,
+        role: Array.isArray(dbUser.role) ? dbUser.role[0] : dbUser.role,
       },
     });
   } catch (err) {

@@ -12,7 +12,10 @@ interface Stats {
   totalArticles: number;
   publishedArticles: number;
   draftArticles: number;
-  totalUsers: number;
+  reviewArticles: number;
+  breakingActive: number;
+  totalViews: number;
+  todayArticles: number;
 }
 
 interface Article {
@@ -22,9 +25,9 @@ interface Article {
   status: string;
   published_at: string | null;
   created_at: string;
-  view_count: number;
-  categories: { name: string } | null;
-  author: { full_name: string } | null;
+  views: number;
+  category: { name: string; slug: string } | null;
+  author: { display_name: string } | null;
 }
 
 interface Author {
@@ -37,11 +40,12 @@ interface Author {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    PUBLISHED: { label: 'Published', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    DRAFT: { label: 'Draft', cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
-    IN_REVIEW: { label: 'In Review', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-    APPROVED: { label: 'Approved', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-    REJECTED: { label: 'Rejected', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    published: { label: 'Published', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    draft: { label: 'Draft', cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' },
+    review: { label: 'In Review', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+    approved: { label: 'Approved', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+    rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    scheduled: { label: 'Scheduled', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
   };
   const s = map[status] || { label: status, cls: 'bg-zinc-100 text-zinc-600' };
   return (
@@ -56,7 +60,7 @@ function getInitials(name: string) {
 }
 
 export default function AdminDashboardPage() {
-  const [stats, setStats] = React.useState<Stats>({ totalArticles: 0, publishedArticles: 0, draftArticles: 0, totalUsers: 0 });
+  const [stats, setStats] = React.useState<Stats>({ totalArticles: 0, publishedArticles: 0, draftArticles: 0, reviewArticles: 0, breakingActive: 0, totalViews: 0, todayArticles: 0 });
   const [recentArticles, setRecentArticles] = React.useState<Article[]>([]);
   const [topAuthors, setTopAuthors] = React.useState<Author[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -66,7 +70,7 @@ export default function AdminDashboardPage() {
     fetch('/api/admin/stats')
       .then(r => r.json())
       .then(data => {
-        setStats(data.stats ?? { totalArticles: 0, publishedArticles: 0, draftArticles: 0, totalUsers: 0 });
+        setStats(data.stats ?? { totalArticles: 0, publishedArticles: 0, draftArticles: 0, reviewArticles: 0, breakingActive: 0, totalViews: 0, todayArticles: 0 });
         setRecentArticles(data.recentArticles ?? []);
         setTopAuthors(data.topAuthors ?? []);
       })
@@ -91,25 +95,25 @@ export default function AdminDashboardPage() {
       color: 'text-emerald-600 dark:text-emerald-400',
       bg: 'bg-emerald-50 dark:bg-emerald-950/40',
       border: 'border-emerald-200 dark:border-emerald-800',
-      href: '/admin/articles?status=PUBLISHED',
+      href: '/admin/articles?status=published',
     },
     {
-      title: 'Drafts',
-      value: stats.draftArticles,
+      title: 'Pending Review',
+      value: stats.reviewArticles,
       icon: Clock,
-      color: 'text-amber-600 dark:text-amber-400',
-      bg: 'bg-amber-50 dark:bg-amber-950/40',
-      border: 'border-amber-200 dark:border-amber-800',
-      href: '/admin/articles?status=DRAFT',
-    },
-    {
-      title: 'Total Users',
-      value: stats.totalUsers,
-      icon: Users,
       color: 'text-blue-600 dark:text-blue-400',
       bg: 'bg-blue-50 dark:bg-blue-950/40',
       border: 'border-blue-200 dark:border-blue-800',
-      href: '/admin/users',
+      href: '/admin/articles?status=review',
+    },
+    {
+      title: 'Breaking News',
+      value: stats.breakingActive,
+      icon: AlertCircle,
+      color: 'text-red-600 dark:text-red-400',
+      bg: 'bg-red-50 dark:bg-red-950/40',
+      border: 'border-red-200 dark:border-red-800',
+      href: '/admin/breaking',
     },
   ];
 
@@ -235,18 +239,18 @@ export default function AdminDashboardPage() {
                       </Link>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-[11px] text-zinc-400">
-                          {article.author?.full_name || 'Unknown'}
+                          {article.author?.display_name || 'Unknown'}
                         </span>
-                        {article.categories?.name && (
+                        {article.category?.name && (
                           <>
                             <span className="text-zinc-300 dark:text-zinc-700">·</span>
-                            <span className="text-[11px] text-zinc-400">{article.categories.name}</span>
+                            <span className="text-[11px] text-zinc-400">{article.category.name}</span>
                           </>
                         )}
                         <span className="text-zinc-300 dark:text-zinc-700">·</span>
                         <div className="flex items-center gap-1 text-[11px] text-zinc-400">
                           <Eye className="h-3 w-3" />
-                          {(article.view_count || 0).toLocaleString()}
+                          {(article.views || 0).toLocaleString()}
                         </div>
                       </div>
                     </div>

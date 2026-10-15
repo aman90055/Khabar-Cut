@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
 import { Badge } from '@/components/ui/badge';
 import {
   Clock, Eye, Calendar, User, CheckCircle2, Bookmark, Share2,
@@ -11,6 +10,12 @@ import { serializeBigInt } from '@/lib/utils';
 import { getAbsoluteUrl, getArticleUrl } from '@/utils/url';
 import { siteConfig } from '@/config/site';
 import { ArticleActions } from '@/components/articles/article-actions';
+import { InArticleAd, SidebarAd } from '@/components/ads/google-ad';
+import { getArticleBySlug, getPublishedArticles } from '@/lib/db/articles';
+import { CommentsSection } from '@/components/comments/comments-section';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 interface ArticlePageProps {
   params: Promise<{
@@ -149,56 +154,128 @@ const MOCK_RELATED = [
   { id: 'rel3', title: 'स्पेस टेक्नोलॉजी में भारतीय स्टार्टअप्स का दबदबा: करोड़ों का नया निवेश', slug: 'space-tech-startups-india', category: { name: 'टेक', slug: 'technology' } },
 ];
 
+import { ARTICLES_DATA } from '@/data/news-articles';
+
 export default async function ArticleDetailPage({ params }: ArticlePageProps) {
   const { category: categorySlug, slug } = await params;
 
-  // Query database for article
-  const article = await prisma.article.findFirst({
-    where: { slug, status: 'PUBLISHED', deletedAt: null },
-    include: {
-      category: true,
-      author: { select: { fullName: true } },
-      featuredImage: { select: { url: true, altText: true } },
-    },
-  }).catch(() => null);
+  // 1. Try Supabase 25-table schema first
+  const sbArticle = await getArticleBySlug(categorySlug, slug);
 
-  const data = article ? serializeBigInt(article) : (slug === MOCK_ARTICLE.slug ? MOCK_ARTICLE : null);
+  // 2. Fallback: static ARTICLES_DATA or MOCK_ARTICLE
+  const matchedFromArticlesData = ARTICLES_DATA.find((a: any) => a.slug === slug);
+  const rawData = sbArticle ?? matchedFromArticlesData ?? (slug === MOCK_ARTICLE.slug ? MOCK_ARTICLE : ARTICLES_DATA[0]);
+
+  if (!rawData) {
+    notFound();
+  }
+
+  // Normalize fields: Supabase schema uses snake_case, legacy uses camelCase
+  const data: any = {
+    ...rawData,
+    // Supabase fields → legacy-compatible names for JSX below
+    title: (rawData as any).title,
+    slug: (rawData as any).slug,
+    excerpt: (rawData as any).short_description ?? (rawData as any).excerpt,
+    publishedAt: (rawData as any).published_at ?? (rawData as any).publishedAt,
+    viewCount: (rawData as any).views ?? (rawData as any).viewCount ?? 0,
+    readingTime: (rawData as any).reading_time ?? (rawData as any).readingTime,
+    author: (rawData as any).author
+      ? {
+          fullName: (rawData as any).author.full_name ?? (rawData as any).author.display_name ?? (rawData as any).author.fullName ?? 'Aman Vishwakarma',
+          ...(rawData as any).author,
+        }
+      : { fullName: 'Aman Vishwakarma' },
+    category: (rawData as any).category ?? null,
+    featuredImage: (rawData as any).featured_image
+      ? {
+          url: (rawData as any).featured_image.url || (rawData as any).featured_image.public_url,
+          altText: (rawData as any).featured_image.alt_text ?? (rawData as any).title,
+        }
+      : (rawData as any).featuredImage ?? null,
+  };
 
   if (!data) {
     notFound();
   }
 
-  // Parse Editor.js blocks
+  // Parse Slate/JSON blocks, Editor.js blocks, or string paragraphs
   let blocks: any[] = [];
   if (data.content && typeof data.content === 'object') {
     const contentObj = data.content as any;
-    blocks = Array.isArray(contentObj.blocks) ? contentObj.blocks : [];
+    if (Array.isArray(contentObj.blocks)) {
+      blocks = contentObj.blocks;
+    } else if (Array.isArray(contentObj)) {
+      blocks = contentObj.map((item: any, idx: number) => ({
+        id: `b-${idx}`,
+        type: item.type === 'heading-2' ? 'header' : (item.type || 'paragraph'),
+        data: {
+          text: item.children ? item.children.map((c: any) => c.text).join('') : (item.text || ''),
+          level: 2,
+        },
+      }));
+    }
+  } else if (typeof data.content === 'string') {
+    try {
+      const parsed = JSON.parse(data.content);
+      if (Array.isArray(parsed)) {
+        blocks = parsed.map((item: any, idx: number) => ({
+          id: `b-${idx}`,
+          type: item.type === 'heading-2' ? 'header' : (item.type || 'paragraph'),
+          data: {
+            text: item.children ? item.children.map((c: any) => c.text).join('') : (item.text || ''),
+            level: 2,
+          },
+        }));
+      } else if (parsed && Array.isArray(parsed.blocks)) {
+        blocks = parsed.blocks;
+      }
+    } catch {
+      blocks = data.content.split('\n\n').filter(Boolean).map((para: string, idx: number) => ({
+        id: `p-${idx}`,
+        type: 'paragraph',
+        data: { text: para.trim() }
+      }));
+    }
   }
 
-  // Schema.org Structured Data
+  // Schema.org Structured Data — NewsArticle (Google News compliant)
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
     'headline': data.title,
-    'description': data.excerpt,
-    'datePublished': new Date(data.publishedAt || '').toISOString(),
+    'description': data.excerpt ?? '',
+    'datePublished': data.publishedAt ? new Date(data.publishedAt).toISOString() : new Date().toISOString(),
+    'dateModified': (rawData as any).updated_at ? new Date((rawData as any).updated_at).toISOString() : undefined,
+    'inLanguage': 'hi-IN',
     'author': {
       '@type': 'Person',
-      'name': data.author?.fullName,
+      'name': data.author?.fullName ?? 'Khabar Cut Newsroom',
     },
     'publisher': {
-      '@type': 'Organization',
+      '@type': 'NewsMediaOrganization',
       'name': siteConfig.name,
       'logo': {
         '@type': 'ImageObject',
-        'url': getAbsoluteUrl('/next.svg'),
+        'url': getAbsoluteUrl('/logo.png'),
+        'width': 512,
+        'height': 512,
       },
     },
     'mainEntityOfPage': {
       '@type': 'WebPage',
       '@id': getAbsoluteUrl(getArticleUrl(categorySlug, slug)),
     },
-    'image': data.featuredImage?.url || '',
+    'image': data.featuredImage?.url
+      ? [{
+          '@type': 'ImageObject',
+          'url': data.featuredImage.url,
+          'width': 1200,
+          'height': 630,
+        }]
+      : [],
+    'articleSection': data.category?.name ?? 'समाचार',
+    'keywords': (rawData as any).tags?.map((t: any) => t.name).join(', ') ?? '',
   };
 
   return (
@@ -265,7 +342,7 @@ export default async function ArticleDetailPage({ params }: ArticlePageProps) {
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
-                  {data.readingTime || 4} मिनट पठन
+                  {(data as any).readTime || (data as any).readingTime || '4 मिनट'}
                 </span>
                 <span className="flex items-center gap-1 text-[#D90429] bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
                   <Eye className="w-3.5 h-3.5" />
@@ -294,17 +371,14 @@ export default async function ArticleDetailPage({ params }: ArticlePageProps) {
               )}
             </div>
 
-            {/* Inline Advertisement */}
-            <div className="ad-container ad-leaderboard my-8 no-print">
-              <span className="ad-label">Advertisement</span>
-              <div className="text-center">
-                <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">In-Article Ad Banner</p>
-                <p className="text-xs font-bold text-[#0057FF]">728 x 90 Leaderboard Slot</p>
-              </div>
-            </div>
+            {/* ✅ Google AdSense In-Article Ad */}
+            <InArticleAd />
 
             {/* Reactions & Actions */}
             <ArticleActions articleTitle={data.title} />
+
+            {/* Comments Section */}
+            {data.id && <CommentsSection articleId={data.id} />}
 
           </article>
 
@@ -352,14 +426,8 @@ export default async function ArticleDetailPage({ params }: ArticlePageProps) {
               </div>
             </div>
 
-            {/* Ad Slot */}
-            <div className="ad-container ad-rectangle">
-              <span className="ad-label">Advertisement</span>
-              <div className="text-center p-4">
-                <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Direct Premium Ad</p>
-                <p className="text-xs font-bold text-[#D90429]">300 x 250 Sidebar Banner</p>
-              </div>
-            </div>
+            {/* ✅ Google AdSense Sidebar Ad */}
+            <SidebarAd />
 
           </aside>
         </div>

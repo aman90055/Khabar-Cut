@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from('users')
       .select(`
-        id, full_name, email, avatar_url, status, created_at,
+        id, full_name, email, avatar_url, is_active, created_at,
         role:role_id ( id, name, slug )
       `, { count: 'exact' })
       .is('deleted_at', null)
