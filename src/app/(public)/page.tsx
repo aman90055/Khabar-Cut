@@ -64,7 +64,7 @@ function viewCount(article: any): string | number {
 export default async function HomePage() {
   // ── Fetch from Supabase 25-table schema ─────────────────────
   const [sbArticles, sbTrending, sbBreaking, breakingNewsTicker] = await Promise.all([
-    getPublishedArticles({ limit: 25 }),
+    getPublishedArticles({ limit: 40 }),
     getTrendingArticles(8),
     getBreakingArticles(4),
     getActiveBreakingNews(),
@@ -74,7 +74,7 @@ export default async function HomePage() {
   const articles: any[] = sbArticles.length > 0 ? sbArticles : ARTICLES_DATA;
   const trendingArticles: any[] = sbTrending.length > 0 ? sbTrending : [];
   const featured = articles[0];
-  const secondaryArticles = articles.slice(1, 7);
+  const secondaryArticles = articles.slice(1, 13);
 
   // Trending list: use real DB data if available, else static mock
   const MOCK_TRENDING_FALLBACK = [
@@ -94,7 +94,7 @@ export default async function HomePage() {
     : MOCK_TRENDING_FALLBACK.map(t => ({ ...t, href: '/search' }));
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 xl:px-10 py-6 sm:py-10 space-y-12 bg-white min-h-screen text-gray-900 font-sans selection:bg-[#D90429]/30">
+    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 xl:px-10 py-6 sm:py-10 space-y-12 bg-white dark:bg-[#070c18] min-h-screen text-gray-900 dark:text-gray-100 font-sans selection:bg-[#D90429]/30">
 
       {/* Instant WhatsApp & Telegram Alert Banner (News24 Style) */}
       <div className="bg-gradient-to-r from-[#071330] via-emerald-950 to-[#071330] text-white rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 border border-emerald-500/20 shadow-lg">
@@ -119,13 +119,13 @@ export default async function HomePage() {
 
       {/* Breaking News Ticker (from DB) - Glassmorphism */}
       {breakingNewsTicker.length > 0 && (
-        <div className="relative flex items-center gap-4 bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm overflow-hidden group">
+        <div className="relative flex items-center gap-4 bg-white dark:bg-[#0d1526] border border-gray-200 dark:border-white/10 rounded-2xl px-5 py-3 shadow-sm overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-r from-[#D90429]/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <span className="shrink-0 flex items-center gap-2 bg-[#D90429] text-white px-3 py-1.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_0_15px_rgba(217,4,41,0.4)]">
             <Flame className="w-3.5 h-3.5 animate-pulse" /> BREAKING
           </span>
           <div className="overflow-hidden whitespace-nowrap relative z-10 w-full">
-            <span className="inline-flex gap-10 animate-marquee text-sm font-semibold text-gray-800">
+            <span className="inline-flex gap-10 animate-marquee text-sm font-semibold text-gray-800 dark:text-gray-200">
               {breakingNewsTicker.map((bn) => (
                 <Link key={bn.id} href={articleUrl(bn.article)} className="hover:text-[#D90429] transition-colors flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#D90429]/50 block" />
@@ -194,14 +194,14 @@ export default async function HomePage() {
         </div>
 
         {/* Column 2: सुपरफास्ट NEWS / Superfast News (Center - 3 Cols) */}
-        <div className="lg:col-span-3 flex flex-col bg-white rounded-2xl p-4 border border-gray-200 shadow-sm">
+        <div className="lg:col-span-3 flex flex-col bg-white dark:bg-[#0d1526] rounded-2xl p-4 border border-gray-200 dark:border-white/10 shadow-sm">
           {/* Superfast Header */}
-          <div className="border-b border-gray-200 pb-3 mb-4">
+          <div className="border-b border-gray-200 dark:border-white/10 pb-3 mb-4">
             <div className="flex items-center justify-between">
               <span className="bg-[#D90429] text-white italic font-black text-sm px-3 py-1 rounded-r-full shadow-sm">
                 सुपरफास्ट NEWS
               </span>
-              <span className="text-[10px] text-gray-500 font-semibold truncate max-w-[130px]">
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 font-semibold truncate max-w-[130px]">
                 सबसे कम समय में सबसे ज्यादा खबरें...
               </span>
             </div>
@@ -290,8 +290,8 @@ export default async function HomePage() {
       </section>
 
       {/* 2. Web Stories (Glass Circles) */}
-      <section className="bg-white border border-gray-200 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
-        <h2 className="text-xs font-black uppercase tracking-[0.2em] text-gray-500 mb-6 flex items-center gap-2 relative z-10">
+      <section className="bg-white dark:bg-[#0d1526] border border-gray-200 dark:border-white/10 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
+        <h2 className="text-xs font-black uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400 mb-6 flex items-center gap-2 relative z-10">
           <Sparkles className="w-4 h-4 text-[#F6B100]" />
           वेब स्टोरीज़
         </h2>
@@ -307,12 +307,12 @@ export default async function HomePage() {
           ].map((story) => (
             <Link key={story.id} href={`/web-stories/${story.id}`} className="flex flex-col items-center gap-3 shrink-0 group snap-center">
               <div className="w-[88px] h-[88px] sm:w-[96px] sm:h-[96px] rounded-full p-[3px] bg-gradient-to-tr from-[#D90429] via-[#F6B100] to-purple-600 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <div className="w-full h-full rounded-full border-[3px] border-white overflow-hidden bg-gray-100 relative">
+                <div className="w-full h-full rounded-full border-[3px] border-white dark:border-[#0d1526] overflow-hidden bg-gray-100 dark:bg-gray-800 relative">
                   <img src={story.coverImage} alt={story.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
                 </div>
               </div>
-              <span className="text-xs font-bold text-gray-700 max-w-[90px] text-center truncate group-hover:text-[#D90429] transition-colors">
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-300 max-w-[90px] text-center truncate group-hover:text-[#D90429] transition-colors">
                 {story.title}
               </span>
             </Link>
@@ -325,12 +325,12 @@ export default async function HomePage() {
         <div className="lg:col-span-8 space-y-6">
           <div className="flex items-center gap-3">
             <div className="w-1.5 h-6 bg-[#D90429] rounded-full" />
-            <h2 className="text-lg sm:text-xl font-black tracking-wide text-gray-900">राज्यों से ताज़ा ख़बरें</h2>
+            <h2 className="text-lg sm:text-xl font-black tracking-wide text-gray-900 dark:text-white">ताज़ा एवं राज्य समाचार</h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {secondaryArticles.map((article: any) => (
-              <Link key={article.id} href={articleUrl(article)} className="group flex flex-col bg-white border border-gray-200 rounded-3xl overflow-hidden hover:shadow-md transition-all duration-300 hover:-translate-y-1">
+              <Link key={article.id} href={articleUrl(article)} className="group flex flex-col bg-white dark:bg-[#0d1526] border border-gray-200 dark:border-white/10 rounded-3xl overflow-hidden hover:shadow-md transition-all duration-300 hover:-translate-y-1">
                 <div className="relative aspect-[16/9] w-full overflow-hidden">
                   <img src={imgUrl(article)} alt={imgAlt(article)} loading="lazy" className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-80" />
@@ -416,8 +416,8 @@ export default async function HomePage() {
           
           {/* Category Blocks */}
           {[
-            { title: 'टेक्नोलॉजी & विज्ञान', items: articles.slice(4, 6), color: 'bg-blue-500' },
-            { title: 'राजनीति & बिज़नेस', items: articles.slice(6, 8), color: 'bg-emerald-500' }
+            { title: 'टेक्नोलॉजी & विज्ञान', items: articles.slice(13, 17), color: 'bg-blue-500' },
+            { title: 'राजनीति & अर्थव्यवस्था', items: articles.slice(17, 21), color: 'bg-emerald-500' }
           ].map((block, idx) => (
             <div key={idx} className="space-y-5">
               <div className="flex items-center gap-3 border-b border-gray-200 dark:border-white/10 pb-3">
@@ -427,7 +427,7 @@ export default async function HomePage() {
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {block.items.map((article: any) => (
-                  <Link key={article.id} href={articleUrl(article)} className="flex gap-4 p-4 rounded-2xl bg-white/50 dark:bg-[#111111]/50 backdrop-blur-lg border border-gray-200/50 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/20 hover:shadow-lg transition-all duration-300 group">
+                  <Link key={article.id} href={articleUrl(article)} className="flex gap-4 p-4 rounded-2xl bg-white dark:bg-[#0d1526] border border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 hover:shadow-lg transition-all duration-300 group">
                     <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 relative">
                       <img src={imgUrl(article)} alt={imgAlt(article)} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
                     </div>

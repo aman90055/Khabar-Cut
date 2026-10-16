@@ -103,8 +103,13 @@ const BREAKING_ITEMS = [
 export function Header() {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [megaMenu, setMegaMenu] = React.useState(false);
@@ -368,15 +373,28 @@ export function Header() {
                 LIVE TV
               </a>
 
-              {/* Dark Mode Toggle */}
-              <button
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/8 transition-all"
-                aria-label="Toggle theme"
-              >
-                <Sun className="w-4.5 h-4.5 dark:hidden" />
-                <Moon className="w-4.5 h-4.5 hidden dark:block" />
-              </button>
+              {/* Dark/Light Mode Toggle */}
+              {(() => {
+                const isDark = (mounted ? (resolvedTheme || theme) : 'light') === 'dark';
+                return (
+                  <button
+                    onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-all border border-gray-200 dark:border-white/10"
+                    aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                    title={isDark ? "लाइट मोड पर स्विच करें (Light Mode)" : "डार्क मोड पर स्विच करें (Dark Mode)"}
+                  >
+                    {mounted ? (
+                      isDark ? (
+                        <Sun className="w-4.5 h-4.5 text-amber-400" />
+                      ) : (
+                        <Moon className="w-4.5 h-4.5 text-gray-700" />
+                      )
+                    ) : (
+                      <div className="w-4.5 h-4.5" />
+                    )}
+                  </button>
+                );
+              })()}
 
               {/* Notifications */}
               <button className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/8 transition-all relative">
@@ -528,14 +546,32 @@ export function Header() {
                   </Link>
                 );
               })}
-              <div className="pt-3 border-t border-gray-100 dark:border-white/5">
+              <div className="pt-3 border-t border-gray-100 dark:border-white/5 space-y-2">
                 <a
                   href="/live"
-                  className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[#D90429] text-white font-bold text-sm"
+                  className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[#D90429] text-white font-bold text-sm shadow-md shadow-red-600/30"
                 >
                   <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
                   LIVE TV देखें
                 </a>
+                {mounted && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isDark = (resolvedTheme || theme) === 'dark';
+                      setTheme(isDark ? 'light' : 'dark');
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-800 dark:text-gray-200 font-bold text-sm"
+                  >
+                    <span className="flex items-center gap-2">
+                      {(resolvedTheme || theme) === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-600" />}
+                      <span>{(resolvedTheme || theme) === 'dark' ? 'डार्क थीम एक्टिव है' : 'लाइट थीम एक्टिव है'}</span>
+                    </span>
+                    <span className="text-xs text-[#D90429] font-black uppercase">
+                      {(resolvedTheme || theme) === 'dark' ? 'लाइट करें ☀️' : 'डार्क करें 🌙'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
