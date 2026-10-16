@@ -146,7 +146,7 @@ export default async function HomePage() {
       </div>
 
       {/* ── 1. AajTak Exact 3-Column Layout Grid ── */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 border-b border-gray-200 pb-10">
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 border-b border-gray-200 dark:border-white/10 pb-10">
         
         {/* Column 1: Main Feature Article (Left - 6 Cols) */}
         <div className="lg:col-span-6 flex flex-col space-y-4">
@@ -154,13 +154,13 @@ export default async function HomePage() {
             <div className="space-y-3">
               {/* Bold Large Headline Above Image */}
               <Link href={articleUrl(featured)} className="group block">
-                <h1 className="text-2xl sm:text-3xl font-black text-gray-900 leading-tight group-hover:text-[#D90429] transition-colors">
+                <h1 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-white leading-tight group-hover:text-[#D90429] transition-colors">
                   {featured.title}
                 </h1>
               </Link>
 
               {/* Main Feature Image */}
-              <Link href={articleUrl(featured)} className="block relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-gray-100 group shadow-md">
+              <Link href={articleUrl(featured)} className="block relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-gray-100 dark:bg-zinc-800 group shadow-md">
                 <img
                   src={imgUrl(featured)}
                   alt={imgAlt(featured)}
@@ -172,20 +172,20 @@ export default async function HomePage() {
               </Link>
 
               {/* Subtitle / Excerpt Text */}
-              <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 leading-relaxed">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 line-clamp-2 leading-relaxed">
                 {featured.short_description || featured.excerpt}
               </p>
             </div>
           )}
 
           {/* Bottom 3-Card Sub-News Row (AajTak Style) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-white/10">
             {secondaryArticles.slice(0, 3).map((sub: any) => (
               <Link key={sub.id} href={articleUrl(sub)} className="group flex flex-col gap-2">
-                <div className="aspect-video rounded-lg overflow-hidden bg-gray-100 relative">
+                <div className="aspect-video rounded-lg overflow-hidden bg-gray-100 dark:bg-zinc-800 relative">
                   <img src={imgUrl(sub)} alt={imgAlt(sub)} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 </div>
-                <h3 className="text-xs font-bold leading-snug text-gray-800 group-hover:text-[#D90429] transition-colors line-clamp-2">
+                <h3 className="text-xs font-bold leading-snug text-gray-800 dark:text-gray-200 group-hover:text-[#D90429] transition-colors line-clamp-2">
                   {sub.title}
                 </h3>
               </Link>
@@ -209,13 +209,13 @@ export default async function HomePage() {
 
           {/* Top Featured Superfast Box */}
           {secondaryArticles[3] && (
-            <Link href={articleUrl(secondaryArticles[3])} className="group block bg-gray-50 rounded-xl p-2.5 border border-gray-200 mb-4 shadow-sm">
+            <Link href={articleUrl(secondaryArticles[3])} className="group block bg-gray-50 dark:bg-white/5 rounded-xl p-2.5 border border-gray-200 dark:border-white/10 mb-4 shadow-sm">
               <div className="flex gap-3 items-center">
-                <div className="w-20 h-16 rounded-lg overflow-hidden shrink-0">
+                <div className="w-20 h-16 rounded-lg overflow-hidden shrink-0 bg-gray-100 dark:bg-zinc-800">
                   <img src={imgUrl(secondaryArticles[3])} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <h4 className="text-xs font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-[#D90429]">
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-gray-100 line-clamp-2 leading-snug group-hover:text-[#D90429]">
                     {secondaryArticles[3].title}
                   </h4>
                   <span className="text-[10px] font-bold text-[#D90429] flex items-center gap-0.5">
@@ -229,11 +229,11 @@ export default async function HomePage() {
           {/* Stacked Superfast Thumbnail List */}
           <div className="space-y-3.5 flex-1 overflow-hidden">
             {articles.slice(4, 9).map((art: any) => (
-              <Link key={art.id} href={articleUrl(art)} className="group flex gap-3 items-start pb-3 border-b border-gray-200 last:border-0 last:pb-0">
-                <div className="w-16 h-14 rounded-lg overflow-hidden shrink-0 bg-gray-100">
+              <Link key={art.id} href={articleUrl(art)} className="group flex gap-3 items-start pb-3 border-b border-gray-200 dark:border-white/10 last:border-0 last:pb-0">
+                <div className="w-16 h-14 rounded-lg overflow-hidden shrink-0 bg-gray-100 dark:bg-zinc-800">
                   <img src={imgUrl(art)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                 </div>
-                <h4 className="text-xs font-bold text-gray-800 group-hover:text-[#D90429] leading-snug line-clamp-2 pt-0.5">
+                <h4 className="text-xs font-bold text-gray-800 dark:text-gray-200 group-hover:text-[#D90429] leading-snug line-clamp-2 pt-0.5">
                   {art.title}
                 </h4>
               </Link>
@@ -244,9 +244,9 @@ export default async function HomePage() {
         {/* Column 3: Live Player & Ads (Right - 3 Cols) */}
         <div className="lg:col-span-3 flex flex-col space-y-5">
           {/* Top ADVERTISEMENT Banner */}
-          <div className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-4 text-center">
-            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-widest block mb-2">ADVERTISEMENT</span>
-            <div className="h-32 bg-gradient-to-br from-red-500/10 to-orange-500/10 rounded-xl flex items-center justify-center border border-red-500/20">
+          <div className="bg-gray-50 dark:bg-[#0d1526] border border-dashed border-gray-300 dark:border-white/15 rounded-2xl p-4 text-center">
+            <span className="text-[10px] uppercase font-bold text-gray-400 dark:text-gray-400 tracking-widest block mb-2">ADVERTISEMENT</span>
+            <div className="h-32 bg-gradient-to-br from-red-500/10 to-orange-500/10 dark:from-red-500/20 dark:to-orange-500/15 rounded-xl flex items-center justify-center border border-red-500/20 dark:border-red-500/30">
               <span className="text-xs font-black text-[#D90429]">Khabar Cut Banner Ads</span>
             </div>
           </div>
