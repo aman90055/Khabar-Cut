@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Activity, Clock, Terminal, User } from 'lucide-react';
@@ -22,27 +21,40 @@ export default async function AuditLogsAdminPage({
   const action = params.action || '';
   const entityType = params.entityType || '';
 
-  const where = {
-    deletedAt: null,
-    ...(action && { action: { contains: action, mode: 'insensitive' as const } }),
-    ...(entityType && { entityType: { contains: entityType, mode: 'insensitive' as const } }),
-  };
+  const supabase = await createClient();
 
-  const logs = await prisma.auditLog.findMany({
-    where,
-    include: {
-      user: {
-        select: {
-          fullName: true,
-          email: true,
-        },
-      },
+  let queryBuilder = supabase
+    .from('audit_logs')
+    .select(`
+      id, action, entity_type, entity_id, old_values, new_values, ip_address, created_at,
+      user:users!user_id (full_name, email)
+    `)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (action) {
+    queryBuilder = queryBuilder.ilike('action', `%${action}%`);
+  }
+
+  if (entityType) {
+    queryBuilder = queryBuilder.ilike('entity_type', `%${entityType}%`);
+  }
+
+  const { data: rawLogs } = await queryBuilder;
+
+  const serializedLogs = (rawLogs || []).map((l: any) => ({
+    id: l.id,
+    action: l.action,
+    entityType: l.entity_type,
+    entityId: l.entity_id,
+    ipAddress: l.ip_address,
+    createdAt: l.created_at,
+    user: {
+      fullName: l.user?.full_name || 'System / Automated',
+      email: l.user?.email || '',
     },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-  }).catch(() => []);
-
-  const serializedLogs = serializeBigInt(logs);
+  }));
 
   return (
     <div className="space-y-6">
@@ -58,83 +70,88 @@ export default async function AuditLogsAdminPage({
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Action filter</span>
             <input
+              type="text"
               name="action"
               defaultValue={action}
-              placeholder="e.g. CREATE_ARTICLE"
-              className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-none"
+              placeholder="e.g. CREATE, UPDATE..."
+              className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </div>
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Entity Type</span>
             <input
+              type="text"
               name="entityType"
               defaultValue={entityType}
-              placeholder="e.g. article"
-              className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-none"
+              placeholder="e.g. article, user..."
+              className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
             />
           </div>
-          <div className="self-end flex gap-2">
-            <Button type="submit" size="sm" className="font-semibold h-9">Filter</Button>
-            <Link href="/admin/audit-logs">
-              <Button type="button" variant="outline" size="sm" className="font-semibold h-9">Reset</Button>
-            </Link>
-          </div>
+          <button
+            type="submit"
+            className="self-end px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 rounded-lg text-xs font-semibold"
+          >
+            Apply Filters
+          </button>
         </form>
       </div>
 
-      {/* Logs timeline list */}
+      {/* Table list */}
       {serializedLogs.length === 0 ? (
-        <div className="text-center py-16 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
+        <div className="text-center py-20 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
           <Terminal className="h-12 w-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
-          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No audit logs</h3>
-          <p className="text-xs text-zinc-500 mt-1">System activity has not generated any records matching the filters.</p>
+          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No Logs Recorded</h3>
+          <p className="text-xs text-zinc-500 mt-1">Audit log records will automatically appear when actions occur.</p>
         </div>
       ) : (
-        <Card>
-          <CardContent className="p-0 divide-y divide-zinc-200 dark:divide-zinc-800">
-            {serializedLogs.map((log: any) => (
-              <div key={log.id} className="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className="bg-red-500/10 border-red-500/20 text-red-500 text-[10px] font-black uppercase">
-                      {log.action}
-                    </Badge>
-                    <Badge variant="secondary" className="text-[10px] font-bold capitalize">
-                      {log.entityType}
-                    </Badge>
-                    <span className="text-[10px] text-zinc-400 font-semibold flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      {format(new Date(log.createdAt), 'dd MMM yyyy HH:mm:ss')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                    Entity ID: <span className="font-mono bg-zinc-100 dark:bg-zinc-900 px-1 py-0.5 rounded-sm">{log.entityId}</span>
-                  </p>
-                  {log.newValues && (
-                    <pre className="text-[10px] bg-zinc-50 dark:bg-zinc-900 p-2.5 rounded-lg border border-zinc-100 dark:border-zinc-800 font-mono text-zinc-600 dark:text-zinc-400 overflow-x-auto max-w-2xl">
-                      {JSON.stringify(log.newValues, null, 2)}
-                    </pre>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="text-right">
-                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1 justify-end">
-                      <User className="h-3.5 w-3.5" />
-                      {log.user?.fullName || 'System Event'}
-                    </p>
-                    <p className="text-[10px] text-zinc-400 font-semibold">{log.user?.email || 'automated@khabarcut.com'}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+        <Card className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 font-semibold">
+                    <th className="text-left py-3 px-4">Action</th>
+                    <th className="text-left py-3 px-4">Entity</th>
+                    <th className="text-left py-3 px-4">Actor</th>
+                    <th className="text-left py-3 px-4">IP Address</th>
+                    <th className="text-left py-3 px-4">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {serializedLogs.map((log: any) => (
+                    <tr key={log.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50">
+                      <td className="py-3 px-4 font-mono font-bold text-zinc-800 dark:text-zinc-200">
+                        <Badge variant="outline" className="font-mono text-[9px] uppercase">
+                          {log.action}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-semibold text-zinc-700 dark:text-zinc-300 capitalize">{log.entityType}</span>
+                        <span className="text-[10px] text-zinc-400 block font-mono">{log.entityId?.slice(0, 8)}...</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <User className="h-3 w-3 text-zinc-400" />
+                          <span className="font-medium text-zinc-800 dark:text-zinc-200">{log.user.fullName}</span>
+                        </div>
+                        {log.user.email && (
+                          <span className="text-[10px] text-zinc-400 block">{log.user.email}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-zinc-400 font-mono text-[10px]">
+                        {log.ipAddress || 'unknown'}
+                      </td>
+                      <td className="py-3 px-4 text-zinc-400 whitespace-nowrap">
+                        {log.createdAt ? format(new Date(log.createdAt), 'dd MMM yyyy, HH:mm:ss') : 'N/A'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       )}
     </div>
   );
 }
-
-// Inline Imports
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';

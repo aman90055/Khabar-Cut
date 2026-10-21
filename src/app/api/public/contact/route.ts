@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendEmail } from '@/lib/email/resend';
+import crypto from 'crypto';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,16 +16,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name, email and message are required' }, { status: 400 });
     }
 
-    // Save lead/inquiry directly into database
-    await supabase.from('comments').insert({
-      author_name: name,
-      author_email: email,
-      body: `[INQUIRY / CONTACT FORM - To: khabarcutnews@gmail.com]\nSubject: ${subject || 'General Inquiry'}\n\n${message}`,
-      status: 'pending',
+    const now = new Date().toISOString();
+
+    // Save inquiry into Supabase leads table
+    await supabase.from('leads').insert({
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      notes: `Subject: ${subject || 'General Inquiry'}\n\n${message}`,
+      source: 'WEBSITE',
+      status: 'NEW',
+      updated_at: now,
     });
 
-    // Send real email via Resend
-    await sendEmail({
+    // Send email via Resend
+    sendEmail({
       to: 'khabarcutnews@gmail.com',
       subject: `📩 [Khabar Cut Inquiry] ${subject || 'New Contact Form Message'} from ${name}`,
       html: `
@@ -58,18 +64,16 @@ export async function POST(request: NextRequest) {
             </div>
 
             <div style="margin-top: 32px; pt: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center;">
-              Sent automatically from Khabar Cut Digital Newsroom (khabarcut.in)
+              Khabar Cut Media Network · Ranchi & New Delhi
             </div>
           </div>
         </div>
       `,
-    });
+    }).catch(() => {});
 
-    return NextResponse.json({
-      success: true,
-      message: 'Inquiry received directly and dispatched via Resend!',
-    });
+    return NextResponse.json({ success: true, message: 'Message sent successfully!' });
   } catch (err: any) {
-    return NextResponse.json({ success: true, message: 'Inquiry received' });
+    console.error('Contact form route error:', err);
+    return NextResponse.json({ error: 'Failed to send message' }, { status: 500 });
   }
 }

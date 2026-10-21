@@ -1,23 +1,26 @@
 import * as React from 'react';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BarChart2, Plus, Trash2, Power, Users } from 'lucide-react';
-import { format } from 'date-fns';
 import { revalidatePath } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PollsAdminPage() {
-  // Fetch polls from settings where group = 'polls'
-  const pollsSettings = await prisma.setting.findMany({
-    where: { group: 'polls' },
-    orderBy: { key: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedPolls = serializeBigInt(pollsSettings).map((item: any) => {
+  // Fetch polls from settings where group = 'polls'
+  const { data: pollsSettings } = await supabase
+    .from('settings')
+    .select('*')
+    .eq('group', 'polls')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const serializedPolls = (pollsSettings || []).map((item: any) => {
     let parsed: any = {};
     try {
       parsed = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
@@ -33,26 +36,28 @@ export default async function PollsAdminPage() {
       totalVotes: parsed.totalVotes || 0,
       startDate: parsed.startDate || null,
       endDate: parsed.endDate || null,
+      originalValue: parsed,
     };
   });
 
   async function handleToggle(key: string, currentValue: any) {
     'use server';
-    let parsed = typeof currentValue === 'string' ? JSON.parse(currentValue) : currentValue;
+    const supabase = await createClient();
+    const parsed = typeof currentValue === 'string' ? JSON.parse(currentValue) : { ...currentValue };
     parsed.isActive = !parsed.isActive;
 
-    await prisma.setting.update({
-      where: { key },
-      data: { value: parsed },
-    });
+    await supabase
+      .from('settings')
+      .update({ value: parsed, updated_at: new Date().toISOString() })
+      .eq('key', key);
+
     revalidatePath('/admin/polls');
   }
 
   async function handleDelete(key: string) {
     'use server';
-    await prisma.setting.delete({
-      where: { key },
-    });
+    const supabase = await createClient();
+    await supabase.from('settings').delete().eq('key', key);
     revalidatePath('/admin/polls');
   }
 
@@ -81,74 +86,68 @@ export default async function PollsAdminPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {serializedPolls.map((poll: any) => {
-            const originalSetting = pollsSettings.find((p) => p.key === poll.key);
-            return (
-              <Card key={poll.id} className="border border-zinc-200 dark:border-zinc-800 relative bg-white dark:bg-zinc-950 flex flex-col justify-between">
-                <CardContent className="p-6 space-y-5">
-                  {/* Question & Status */}
-                  <div className="flex justify-between items-start gap-2">
-                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 leading-snug">
-                      {poll.question}
-                    </h3>
-                    <Badge
-                      className={`border-none font-bold uppercase text-[8px] shrink-0 ${
-                        poll.isActive
-                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                      }`}
-                    >
-                      {poll.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </div>
+          {serializedPolls.map((poll: any) => (
+            <Card key={poll.id} className="border border-zinc-200 dark:border-zinc-800 relative bg-white dark:bg-zinc-950 flex flex-col justify-between">
+              <CardContent className="p-6 space-y-5">
+                {/* Question & Status */}
+                <div className="flex justify-between items-start gap-2">
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 leading-snug">
+                    {poll.question}
+                  </h3>
+                  <Badge
+                    className={`border-none font-bold uppercase text-[8px] shrink-0 ${
+                      poll.isActive
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                    }`}
+                  >
+                    {poll.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
 
-                  {/* Options & Votes bars */}
-                  <div className="space-y-3">
-                    {poll.options.map((opt: any, idx: number) => {
-                      const pct = poll.totalVotes > 0 ? ((opt.votes / poll.totalVotes) * 100).toFixed(1) : '0';
-                      return (
-                        <div key={idx} className="space-y-1">
-                          <div className="flex justify-between text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                            <span>{opt.text}</span>
-                            <span>{opt.votes} votes ({pct}%)</span>
-                          </div>
-                          <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
-                            <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                          </div>
+                {/* Options & Votes bars */}
+                <div className="space-y-3">
+                  {poll.options.map((opt: any, idx: number) => {
+                    const pct = poll.totalVotes > 0 ? ((opt.votes / poll.totalVotes) * 100).toFixed(1) : '0';
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                          <span>{opt.text}</span>
+                          <span>{opt.votes} votes ({pct}%)</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
+                          <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                  {/* Meta details */}
-                  <div className="flex justify-between items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                    <span className="text-[10px] text-zinc-400 font-semibold flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5" />
-                      Total: {poll.totalVotes} responses
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <form action={handleToggle.bind(null, poll.key, originalSetting?.value)}>
-                        <Button variant="outline" size="sm" type="submit" className="font-semibold text-xs h-8 gap-1.5">
-                          <Power className="h-3.5 w-3.5" />
-                          Toggle status
-                        </Button>
-                      </form>
-                      <form action={handleDelete.bind(null, poll.key)}>
-                        <Button variant="ghost" size="sm" type="submit" className="h-8 text-red-500 hover:text-red-600">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </form>
-                    </div>
+                {/* Meta details */}
+                <div className="flex justify-between items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                  <span className="text-[10px] text-zinc-400 font-semibold flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    Total: {poll.totalVotes} responses
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <form action={handleToggle.bind(null, poll.key, poll.originalValue)}>
+                      <Button variant="outline" size="sm" type="submit" className="font-semibold text-xs h-8 gap-1.5">
+                        <Power className="h-3.5 w-3.5" />
+                        Toggle status
+                      </Button>
+                    </form>
+                    <form action={handleDelete.bind(null, poll.key)}>
+                      <Button variant="ghost" size="sm" type="submit" className="h-8 text-red-500 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </form>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>
   );
 }
-
-// Inline Imports
-import Link from 'next/link';

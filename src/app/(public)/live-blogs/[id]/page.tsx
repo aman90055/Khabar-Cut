@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import { LiveBlogReader } from './LiveBlogReader';
 
@@ -12,35 +11,56 @@ interface PageParams {
 
 export default async function LiveBlogDetailPage({ params }: PageParams) {
   const { id } = await params;
+  const supabase = await createClient();
 
-  const blog = await prisma.liveBlog.findFirst({
-    where: { id, deletedAt: null },
-    include: {
-      author: { select: { displayName: true, avatarUrl: true } },
-    },
-  }).catch(() => null);
+  const { data: blog } = await supabase
+    .from('live_blogs')
+    .select(`
+      id, title, slug, description, status, started_at, created_at,
+      author:authors!author_id (display_name, avatar_url)
+    `)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
 
   if (!blog) {
     notFound();
   }
 
   // Fetch initial updates
-  const entries = await prisma.liveBlogEntry.findMany({
-    where: { liveBlogId: id, deletedAt: null },
-    include: {
-      author: { select: { displayName: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const { data: rawEntries } = await supabase
+    .from('live_blog_entries')
+    .select(`
+      id, live_blog_id, content, created_at
+    `)
+    .eq('live_blog_id', id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const authorData: any = Array.isArray(blog.author) ? blog.author[0] : blog.author;
 
   const serializedBlog = {
-    ...serializeBigInt(blog),
-    startedAt: blog.startedAt.toISOString(),
+    id: blog.id,
+    title: blog.title,
+    slug: blog.slug,
+    description: blog.description,
+    status: blog.status,
+    startedAt: blog.started_at ? new Date(blog.started_at).toISOString() : new Date().toISOString(),
+    author: {
+      displayName: authorData?.display_name || 'खबर कट टीम',
+      avatarUrl: authorData?.avatar_url || null,
+    },
   };
 
-  const serializedEntries = serializeBigInt(entries).map((entry: any) => ({
-    ...entry,
+  const serializedEntries = (rawEntries || []).map((entry: any) => ({
+    id: entry.id,
     content: typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content),
+    isPinned: Boolean(entry.is_pinned),
+    entryType: entry.entry_type || 'STANDARD',
+    createdAt: entry.created_at,
+    author: {
+      displayName: 'खबर कट टीम',
+    },
   }));
 
   return (

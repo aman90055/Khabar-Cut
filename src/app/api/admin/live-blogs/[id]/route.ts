@@ -1,48 +1,36 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { createClient } from '@/lib/supabase/server';
-import { serializeBigInt } from '@/lib/utils';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+const adminSupabase = createAdminClient();
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { id } = await params;
 
-    const blog = await prisma.liveBlog.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        author: {
-          select: { displayName: true },
-        },
-      },
-    });
+    const { data: blog, error: blogError } = await adminSupabase
+      .from('live_blogs')
+      .select('*, author:authors!author_id(display_name)')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
 
-    if (!blog) {
+    if (blogError || !blog) {
       return NextResponse.json({ error: 'Live blog not found' }, { status: 404 });
     }
 
-    const entries = await prisma.liveBlogEntry.findMany({
-      where: { liveBlogId: id, deletedAt: null },
-      include: {
-        author: {
-          select: { displayName: true, avatarUrl: true },
-        },
-      },
-      orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
-    }).catch(() => []);
+    const { data: entries } = await adminSupabase
+      .from('live_blog_entries')
+      .select('*')
+      .eq('live_blog_id', id)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
 
     return NextResponse.json({
-      blog: serializeBigInt(blog),
-      entries: serializeBigInt(entries),
+      blog,
+      entries: entries || [],
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

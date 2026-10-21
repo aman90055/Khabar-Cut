@@ -14,13 +14,14 @@ export default async function WebStoriesAdminPage() {
   
   const { data: stories, error } = await supabase
     .from('web_stories')
-    .select(`
-      *,
-      web_story_slides(count)
-    `)
+    .select('*')
     .order('created_at', { ascending: false });
 
-  const serializedStories = stories || [];
+  const serializedStories = (stories || []).map((s: any) => ({
+    ...s,
+    cover_image_url: s.cover_image || s.cover_image_url,
+    slideCount: Array.isArray(s.slides) ? s.slides.length : 0,
+  }));
 
   async function handleDelete(id: string) {
     'use server';
@@ -80,7 +81,7 @@ export default async function WebStoriesAdminPage() {
                   <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-50 leading-snug line-clamp-2" title={story.title}>
                     {story.title}
                   </h3>
-                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Slides: {story.web_story_slides?.[0]?.count || 0}</p>
+                  <p className="text-[10px] text-zinc-400 font-semibold mt-1">Slides: {story.slideCount || 0}</p>
                 </div>
 
                 <div className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">

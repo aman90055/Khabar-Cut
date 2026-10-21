@@ -18,7 +18,6 @@ const ARTICLE_LIST_SELECT = `
 const ARTICLE_FULL_SELECT = `
   *,
   category:categories!category_id (*),
-  subcategory:categories!subcategory_id (*),
   author:users!author_id (id, full_name, email, avatar_url),
   featured_image:media!featured_image_id (*),
   tags:article_tags (tag:tags (*))

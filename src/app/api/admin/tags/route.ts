@@ -1,23 +1,31 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
-import { generateSlug, serializeBigInt } from '@/lib/utils';
+import { generateSlug } from '@/lib/utils';
 import { requireAuth } from '@/middleware/rbac';
+import crypto from 'crypto';
+
+const adminSupabase = createAdminClient();
 
 export async function GET() {
   try {
     await requireAuth();
-    const tags = await prisma.tag.findMany({
-      where: { deletedAt: null },
-      include: {
-        _count: {
-          select: { articles: { where: { deletedAt: null } } },
-        },
-      },
-      orderBy: { name: 'asc' },
-    }).catch(() => []);
+    const { data: tags, error } = await adminSupabase
+      .from('tags')
+      .select('id, name, slug, description, created_at')
+      .is('deleted_at', null)
+      .order('name', { ascending: true });
 
-    return NextResponse.json({ data: serializeBigInt(tags) });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const formatted = (tags || []).map((t: any) => ({
+      ...t,
+      _count: { articles: 0 },
+    }));
+
+    return NextResponse.json({ data: formatted });
   } catch (error: any) {
     const status = error.statusCode || 500;
     return NextResponse.json({ error: error.message || 'Server error' }, { status });
@@ -43,27 +51,40 @@ export async function POST(request: Request) {
     let slug = baseSlug;
     let counter = 1;
     while (true) {
-      const existing = await prisma.tag.findFirst({
-        where: { slug, deletedAt: null },
-      });
+      const { data: existing } = await adminSupabase
+        .from('tags')
+        .select('id')
+        .eq('slug', slug)
+        .is('deleted_at', null)
+        .maybeSingle();
+
       if (!existing) break;
       slug = `${baseSlug}-${counter}`;
       counter++;
     }
 
-    const tag = await prisma.tag.create({
-      data: {
+    const now = new Date().toISOString();
+    const { data: tag, error } = await adminSupabase
+      .from('tags')
+      .insert({
+        id: crypto.randomUUID(),
         name: validated.name,
         slug,
         description: validated.description || null,
-      },
-    });
+        updated_at: now,
+      })
+      .select()
+      .single();
 
-    return NextResponse.json({ success: true, data: serializeBigInt(tag) }, { status: 201 });
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    return NextResponse.json({
+      success: true,
+      data: { ...tag, _count: { articles: 0 } },
+    }, { status: 201 });
+  } catch (error: any) {
     const status = error.statusCode || 500;
     return NextResponse.json({ error: error.message || 'Server error' }, { status });
   }

@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function GET(_request: Request) {
-  const dbResult = await prisma.$queryRaw`SELECT 1`.catch(() => null);
-  const isDatabaseConnected = dbResult !== null;
+  const { error } = await supabase.from('articles').select('id', { head: true, count: 'exact' });
+  const isDatabaseConnected = !error;
 
   return NextResponse.json({
     status: isDatabaseConnected ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     services: {
-      database: isDatabaseConnected ? 'connected' : 'disconnected',
+      supabase: isDatabaseConnected ? 'connected' : 'disconnected',
     },
   });
 }

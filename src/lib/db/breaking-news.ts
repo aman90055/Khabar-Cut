@@ -9,10 +9,9 @@ export async function getActiveBreakingNews(): Promise<BreakingNews[]> {
     .from('breaking_news')
     .select('*, article:articles!article_id(id, title, slug, category:categories!category_id(slug))')
     .eq('is_active', true)
-    .lte('start_at', now)
-    .or(`end_at.is.null,end_at.gte.${now}`)
-    .order('priority', { ascending: true })
-    .limit(5);
+    .or(`expires_at.is.null,expires_at.gte.${now}`)
+    .order('priority', { ascending: false })
+    .limit(10);
 
   if (error) {
     console.error('[DB] getActiveBreakingNews error:', error.message);
@@ -23,17 +22,18 @@ export async function getActiveBreakingNews(): Promise<BreakingNews[]> {
 
 export async function setBreakingNews(
   articleId: string,
-  headline: string,
+  title: string,
   priority = 1,
-  endAt?: string
+  expiresAt?: string
 ): Promise<boolean> {
   const supabase = await createClient();
   const { error } = await supabase.from('breaking_news').insert({
     article_id: articleId,
-    headline,
+    title,
     priority,
     is_active: true,
-    end_at: endAt ?? null,
+    expires_at: expiresAt ?? null,
+    updated_at: new Date().toISOString(),
   });
 
   return !error;

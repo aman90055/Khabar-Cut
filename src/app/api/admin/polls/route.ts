@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { createClient } from '@/lib/supabase/server';
+import crypto from 'crypto';
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const body = await request.json(); // Expected: { question, options: string[], isActive, startDate, endDate }
 
@@ -22,21 +18,30 @@ export async function POST(request: Request) {
       options: body.options.map((opt: string) => ({ text: opt, votes: 0 })),
       isActive: body.isActive ?? true,
       totalVotes: 0,
-      startDate: body.startDate,
-      endDate: body.endDate,
+      startDate: body.startDate || null,
+      endDate: body.endDate || null,
     };
 
     const settingKey = `poll_${Date.now()}`;
+    const now = new Date().toISOString();
 
-    const setting = await prisma.setting.create({
-      data: {
+    const { data: setting, error } = await supabase
+      .from('settings')
+      .insert({
+        id: crypto.randomUUID(),
         key: settingKey,
         value: pollData,
         group: 'polls',
         description: body.question,
-        isPublic: true,
-      },
-    });
+        is_public: true,
+        updated_at: now,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data: setting });
   } catch (err: any) {

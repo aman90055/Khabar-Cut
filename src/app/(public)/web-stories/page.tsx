@@ -1,24 +1,22 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
-import { BookOpen, Calendar, ArrowRight } from 'lucide-react';
-import { format } from 'date-fns';
+import { BookOpen } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function WebStoriesPublicPage() {
-  const stories = await prisma.webStory.findMany({
-    where: { status: 'PUBLISHED', deletedAt: null },
-    include: {
-      author: { select: { displayName: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedStories = serializeBigInt(stories);
+  const { data: stories } = await supabase
+    .from('web_stories')
+    .select('*')
+    .eq('status', 'PUBLISHED')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const serializedStories = stories || [];
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
@@ -52,11 +50,12 @@ export default async function WebStoriesPublicPage() {
             } catch {
               // ignore
             }
+            const cover = story.cover_image || story.cover_image_url;
             return (
               <Link key={story.id} href={`/web-stories/${story.slug}`}>
                 <div className="group relative aspect-[9/16] w-full rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-900 shadow-md cursor-pointer flex flex-col justify-end text-white hover:scale-[1.02] transition-all">
-                  {story.coverImage && (
-                    <img src={story.coverImage} alt={story.title} className="absolute inset-0 h-full w-full object-cover opacity-75 group-hover:scale-103 transition-transform duration-300" />
+                  {cover && (
+                    <img src={cover} alt={story.title} className="absolute inset-0 h-full w-full object-cover opacity-75 group-hover:scale-105 transition-transform duration-300" />
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
                   <div className="relative p-4 space-y-2 z-10">

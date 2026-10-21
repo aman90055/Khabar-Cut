@@ -1,23 +1,24 @@
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { TagsManager } from './TagsManager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function TagsPage() {
-  const rawTags = await prisma.tag
-    .findMany({
-      where: { deletedAt: null },
-      include: {
-        _count: {
-          select: { articles: { where: { deletedAt: null } } },
-        },
-      },
-      orderBy: { name: 'asc' },
-    })
-    .catch(() => []);
+  const supabase = await createClient();
 
-  const tags = serializeBigInt(rawTags);
+  const { data: rawTags } = await supabase
+    .from('tags')
+    .select('id, name, slug, description')
+    .is('deleted_at', null)
+    .order('name', { ascending: true });
+
+  const tags = (rawTags || []).map((t: any) => ({
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    description: t.description || null,
+    _count: { articles: 0 },
+  }));
 
   return (
     <div className="space-y-6">

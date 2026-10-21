@@ -1,26 +1,43 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Play, Video, Clock, Eye, Calendar, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
 
 export default async function VideosPublicPage() {
-  const videos = await prisma.video.findMany({
-    where: { status: 'PUBLISHED', deletedAt: null },
-    include: {
-      category: { select: { name: true, slug: true } },
-      author: { select: { displayName: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedVideos = serializeBigInt(videos);
+  const { data: rawVideos } = await supabase
+    .from('videos')
+    .select(`
+      id, title, slug, description, video_url, thumbnail_url, duration,
+      view_count, is_featured, created_at,
+      category:categories!category_id (name, slug),
+      author:users!author_id (full_name)
+    `)
+    .eq('status', 'PUBLISHED')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const serializedVideos = (rawVideos || []).map((v: any) => ({
+    id: v.id,
+    title: v.title,
+    slug: v.slug,
+    description: v.description,
+    videoUrl: v.video_url,
+    thumbnailUrl: v.thumbnail_url,
+    duration: v.duration,
+    viewCount: v.view_count || 0,
+    isFeatured: v.is_featured,
+    createdAt: v.created_at,
+    category: v.category,
+    author: {
+      displayName: v.author?.full_name || 'खबर कट टीम',
+    },
+  }));
 
   const formatDuration = (secs: number | null) => {
     if (!secs) return '00:00';

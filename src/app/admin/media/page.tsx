@@ -1,7 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,31 +26,42 @@ export default async function MediaLibraryPage({
   const query = params.q || '';
   const pageSize = 24;
 
-  const where = {
-    deletedAt: null,
-    ...(type && type !== 'ALL' && { type: type as any }),
-    ...(query && {
-      OR: [
-        { filename: { contains: query, mode: 'insensitive' as const } },
-        { originalName: { contains: query, mode: 'insensitive' as const } },
-      ],
-    }),
-  };
+  const supabase = await createClient();
 
-  const [mediaItems, totalCount] = await Promise.all([
-    prisma.media
-      .findMany({
-        where,
-        include: { uploadedBy: { select: { fullName: true } } },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      })
-      .catch(() => []),
-    prisma.media.count({ where }).catch(() => 0),
-  ]);
+  let queryBuilder = supabase
+    .from('media')
+    .select('*, uploaded_by:users!uploaded_by_id(full_name)', { count: 'exact' })
+    .is('deleted_at', null);
 
-  const serializedMedia = serializeBigInt(mediaItems);
+  if (type && type !== 'ALL') {
+    queryBuilder = queryBuilder.eq('type', type);
+  }
+
+  if (query) {
+    queryBuilder = queryBuilder.or(`filename.ilike.%${query}%,original_name.ilike.%${query}%`);
+  }
+
+  const { data: mediaItems, count } = await queryBuilder
+    .order('created_at', { ascending: false })
+    .range((page - 1) * pageSize, page * pageSize - 1);
+
+  const totalCount = count || 0;
+  const serializedMedia = (mediaItems || []).map((m: any) => ({
+    id: m.id,
+    filename: m.filename,
+    originalName: m.original_name,
+    mimeType: m.mime_type,
+    size: m.size,
+    url: m.url,
+    thumbnailUrl: m.thumbnail_url || m.url,
+    altText: m.alt_text,
+    type: m.type,
+    createdAt: m.created_at,
+    uploadedBy: {
+      fullName: m.uploaded_by?.full_name || 'Admin',
+    },
+  }));
+
   const totalPages = Math.ceil(totalCount / pageSize);
 
   function formatBytes(bytes: number) {
@@ -59,109 +69,93 @@ export default async function MediaLibraryPage({
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Media Library</h1>
-          <p className="text-sm text-zinc-500 mt-1">Manage and upload files for articles and layouts.</p>
+          <p className="text-sm text-zinc-500 mt-1">Browse and manage uploaded images, banners, and video assets.</p>
         </div>
         <Link href="/admin/media/upload">
-          <Button className="font-semibold gap-2">
+          <Button className="gap-2">
             <Upload className="h-4 w-4" />
-            Upload Files
+            Upload Media
           </Button>
         </Link>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
-        {/* Type tabs */}
-        <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
-          {['ALL', 'IMAGE', 'VIDEO', 'DOCUMENT'].map((t) => (
-            <Link
-              key={t}
-              href={`/admin/media?type=${t}&q=${query}`}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                (type || 'ALL') === t
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {t.charAt(0) + t.slice(1).toLowerCase() + 's'}
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
+          {['ALL', 'IMAGE', 'VIDEO'].map((t) => (
+            <Link key={t} href={`/admin/media?type=${t === 'ALL' ? '' : t}&q=${query}`}>
+              <Button
+                variant={type === t || (!type && t === 'ALL') ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs"
+              >
+                {t}
+              </Button>
             </Link>
           ))}
         </div>
-
-        {/* Search */}
-        <form className="relative w-full md:w-72">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-          <input
-            name="q"
-            defaultValue={query}
-            placeholder="Search filename..."
-            className="w-full text-xs pl-9 pr-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-red-500 focus:border-red-500"
-          />
-          {type && <input type="hidden" name="type" value={type} />}
-        </form>
+          <form method="GET">
+            <input
+              type="text"
+              name="q"
+              defaultValue={query}
+              placeholder="Search file name..."
+              className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            {type && <input type="hidden" name="type" value={type} />}
+          </form>
+        </div>
       </div>
 
       {/* Grid */}
       {serializedMedia.length === 0 ? (
-        <div className="text-center py-16 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
+        <div className="text-center py-20 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
           <Image className="h-12 w-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
-          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No media found</h3>
-          <p className="text-xs text-zinc-500 mt-1">Try changing filters or upload your first file.</p>
+          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No Media Found</h3>
+          <p className="text-xs text-zinc-500 mt-1">Upload files or try adjusting your search filters.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {serializedMedia.map((item: any) => (
-            <Card key={item.id} className="group overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 relative bg-white dark:bg-zinc-950">
-              <div className="aspect-square w-full relative overflow-hidden bg-zinc-100 dark:bg-zinc-900">
+            <Card key={item.id} className="group overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex flex-col justify-between">
+              <div className="aspect-square relative bg-zinc-100 dark:bg-zinc-900 overflow-hidden flex items-center justify-center">
                 {item.type === 'IMAGE' ? (
                   <img
                     src={item.url}
-                    alt={item.altText || item.filename}
-                    className="h-full w-full object-cover transition-transform group-hover:scale-105 duration-300"
+                    alt={item.altText || item.originalName}
+                    className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
                   />
-                ) : item.type === 'VIDEO' ? (
-                  <div className="h-full w-full flex items-center justify-center bg-zinc-950">
-                    <Video className="h-10 w-10 text-white/70" />
-                  </div>
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-                    <FileText className="h-10 w-10 text-zinc-400" />
-                  </div>
+                  <Video className="h-10 w-10 text-zinc-400" />
                 )}
-
-                {/* Overlays */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-                    title="View file"
-                  >
-                    <Eye className="h-4 w-4" />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <a href={item.url} target="_blank" rel="noopener noreferrer">
+                    <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full">
+                      <Eye className="h-4 w-4" />
+                    </Button>
                   </a>
                 </div>
               </div>
-              <div className="p-3 space-y-1">
-                <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50 truncate" title={item.filename}>
-                  {item.originalName || item.filename}
+              <CardContent className="p-3 space-y-1">
+                <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate" title={item.originalName}>
+                  {item.originalName}
                 </p>
-                <div className="flex justify-between items-center text-[10px] text-zinc-400 font-semibold">
-                  <span>{formatBytes(Number(item.size))}</span>
-                  <Badge variant="secondary" className="text-[8px] px-1 py-0 border-none font-bold uppercase">
-                    {item.type}
-                  </Badge>
+                <div className="flex justify-between items-center text-[10px] text-zinc-400">
+                  <span>{formatBytes(item.size)}</span>
+                  <span>{format(new Date(item.createdAt), 'dd/MM/yy')}</span>
                 </div>
-              </div>
+              </CardContent>
             </Card>
           ))}
         </div>
@@ -169,14 +163,22 @@ export default async function MediaLibraryPage({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 pt-4">
-          <Link href={`/admin/media?type=${type}&q=${query}&page=${page - 1}`} className={page <= 1 ? 'pointer-events-none opacity-55' : ''}>
-            <Button variant="outline" size="sm" className="font-semibold">Prev</Button>
-          </Link>
-          <span className="text-xs font-semibold text-zinc-500">Page {page} of {totalPages}</span>
-          <Link href={`/admin/media?type=${type}&q=${query}&page=${page + 1}`} className={page >= totalPages ? 'pointer-events-none opacity-55' : ''}>
-            <Button variant="outline" size="sm" className="font-semibold">Next</Button>
-          </Link>
+        <div className="flex justify-between items-center pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs">
+          <span className="text-zinc-500">
+            Page {page} of {totalPages} ({totalCount} total assets)
+          </span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link href={`/admin/media?page=${page - 1}&type=${type}&q=${query}`}>
+                <Button variant="outline" size="sm">Previous</Button>
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link href={`/admin/media?page=${page + 1}&type=${type}&q=${query}`}>
+                <Button variant="outline" size="sm">Next</Button>
+              </Link>
+            )}
+          </div>
         </div>
       )}
     </div>

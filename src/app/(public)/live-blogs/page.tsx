@@ -1,7 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,16 +10,31 @@ import { format } from 'date-fns';
 export const dynamic = 'force-dynamic';
 
 export default async function LiveBlogsPublicPage() {
-  const blogs = await prisma.liveBlog.findMany({
-    where: { deletedAt: null },
-    include: {
-      author: { select: { displayName: true } },
-      _count: { select: { entries: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedBlogs = serializeBigInt(blogs);
+  const { data: rawBlogs } = await supabase
+    .from('live_blogs')
+    .select(`
+      id, title, slug, description, status, started_at, created_at,
+      author:authors!author_id (display_name)
+    `)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const serializedBlogs = (rawBlogs || []).map((b: any) => {
+    const authorData: any = Array.isArray(b.author) ? b.author[0] : b.author;
+    return {
+      id: b.id,
+      title: b.title,
+      slug: b.slug,
+      description: b.description,
+      status: b.status,
+      createdAt: b.created_at || b.started_at,
+      author: {
+        displayName: authorData?.display_name || 'खबर कट टीम',
+      },
+    };
+  });
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
@@ -58,37 +72,34 @@ export default async function LiveBlogsPublicPage() {
                       </Badge>
                     ) : (
                       <Badge variant="secondary" className="font-bold text-[9px] uppercase tracking-wider border-none">
-                        Ended
+                        Archived
                       </Badge>
                     )}
-                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
-                      Started {format(new Date(blog.startedAt), 'dd MMM yyyy HH:mm')}
+                    <span className="text-xs text-zinc-400 font-semibold flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {format(new Date(blog.createdAt), 'dd MMMM yyyy')}
                     </span>
                   </div>
 
-                  <h3 className="text-lg sm:text-xl font-extrabold text-zinc-950 dark:text-zinc-50 leading-snug hover:text-red-600 transition-colors">
-                    <Link href={`/live-blogs/${blog.id}`}>
-                      {blog.title}
-                    </Link>
-                  </h3>
+                  <h2 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-50 leading-snug">
+                    {blog.title}
+                  </h2>
 
                   {blog.description && (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed font-semibold">
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 line-clamp-2">
                       {blog.description}
                     </p>
                   )}
 
-                  <div className="flex items-center gap-3 text-[10px] text-zinc-400 font-bold uppercase">
-                    <span>By {blog.author?.displayName || 'Editorial Desk'}</span>
-                    <span>•</span>
-                    <span>{blog._count?.entries || 0} updates</span>
+                  <div className="flex items-center gap-2 text-xs text-zinc-400">
+                    <span>Anchored by: <strong className="text-zinc-700 dark:text-zinc-300">{blog.author.displayName}</strong></span>
                   </div>
                 </div>
 
-                <Link href={`/live-blogs/${blog.id}`} className="shrink-0 w-full sm:w-auto">
-                  <Button className="w-full sm:w-auto font-bold gap-2">
-                    Follow Updates <ArrowRight className="h-4 w-4" />
+                <Link href={`/live-blogs/${blog.id}`}>
+                  <Button className="font-bold gap-2 shrink-0">
+                    View Live Feed
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
               </CardContent>

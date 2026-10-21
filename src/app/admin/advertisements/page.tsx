@@ -1,32 +1,50 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Megaphone, Plus, Trash2, Power, Eye, MousePointer } from 'lucide-react';
 import { format } from 'date-fns';
-import { toggleAdActive, deleteAd } from '@/features/advertisements/actions';
+import { revalidatePath } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdvertisementsAdminPage() {
-  const ads = await prisma.advertisement.findMany({
-    where: { deletedAt: null },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedAds = serializeBigInt(ads);
+  const { data: rawAds } = await supabase
+    .from('advertisements')
+    .select('*')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
 
-  async function handleToggle(id: string) {
+  const serializedAds = (rawAds || []).map((ad: any) => ({
+    id: ad.id,
+    title: ad.title,
+    type: ad.type,
+    position: ad.position,
+    imageUrl: ad.image_url,
+    targetUrl: ad.target_url,
+    isActive: ad.is_active,
+    startDate: ad.start_date,
+    endDate: ad.end_date,
+    impressions: ad.impressions || 0,
+    clicks: ad.clicks || 0,
+  }));
+
+  async function handleToggle(id: string, currentStatus: boolean) {
     'use server';
-    await toggleAdActive(id);
+    const supabase = await createClient();
+    await supabase.from('advertisements').update({ is_active: !currentStatus, updated_at: new Date().toISOString() }).eq('id', id);
+    revalidatePath('/admin/advertisements');
   }
 
   async function handleDelete(id: string) {
     'use server';
-    await deleteAd(id);
+    const supabase = await createClient();
+    await supabase.from('advertisements').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    revalidatePath('/admin/advertisements');
   }
 
   return (
@@ -59,65 +77,54 @@ export default async function AdvertisementsAdminPage() {
             return (
               <Card key={ad.id} className="border border-zinc-200 dark:border-zinc-800 relative bg-white dark:bg-zinc-950 flex flex-col justify-between">
                 <CardContent className="p-6 space-y-4">
-                  {/* Title & Status */}
                   <div className="flex justify-between items-start gap-2">
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 leading-snug line-clamp-1">
+                    <div>
+                      <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 leading-snug">
                         {ad.title}
                       </h3>
-                      <div className="flex gap-1.5 flex-wrap">
-                        <Badge variant="outline" className="text-[9px] uppercase font-bold">{ad.type}</Badge>
-                        <Badge variant="secondary" className="text-[9px] uppercase font-bold">{ad.position}</Badge>
-                      </div>
+                      <p className="text-xs text-zinc-400 mt-0.5">Slot: <span className="font-bold">{ad.position}</span></p>
                     </div>
                     <Badge
-                      className={`border-none font-bold uppercase text-[8px] ${
+                      className={`border-none font-bold uppercase text-[8px] shrink-0 ${
                         ad.isActive
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                           : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
                       }`}
                     >
-                      {ad.isActive ? 'Active' : 'Inactive'}
+                      {ad.isActive ? 'Active' : 'Paused'}
                     </Badge>
                   </div>
 
-                  {/* Visual preview */}
                   {ad.imageUrl && (
-                    <div className="aspect-video w-full rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 border">
-                      <img src={ad.imageUrl} alt={ad.title} className="h-full w-full object-cover" />
+                    <div className="aspect-[4/1] rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-900 border">
+                      <img src={ad.imageUrl} alt={ad.title} className="w-full h-full object-cover" />
                     </div>
                   )}
 
-                  {/* Stats & range */}
-                  <div className="grid grid-cols-3 gap-2 border-y border-zinc-100 dark:border-zinc-800 py-3 text-center">
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] font-black uppercase text-zinc-400 flex items-center justify-center gap-1">
-                        <Eye className="h-3 w-3" /> Imps
-                      </span>
-                      <p className="text-sm font-black text-zinc-800 dark:text-zinc-200">{Number(ad.impressions).toLocaleString()}</p>
+                  <div className="grid grid-cols-3 gap-2 py-2 border-y border-zinc-100 dark:border-zinc-800 text-center">
+                    <div>
+                      <span className="text-[10px] text-zinc-400 font-bold block uppercase">Views</span>
+                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{Number(ad.impressions).toLocaleString()}</span>
                     </div>
-                    <div className="space-y-0.5 border-x">
-                      <span className="text-[9px] font-black uppercase text-zinc-400 flex items-center justify-center gap-1">
-                        <MousePointer className="h-3 w-3" /> Clicks
-                      </span>
-                      <p className="text-sm font-black text-zinc-800 dark:text-zinc-200">{Number(ad.clicks).toLocaleString()}</p>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 font-bold block uppercase">Clicks</span>
+                      <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">{Number(ad.clicks).toLocaleString()}</span>
                     </div>
-                    <div className="space-y-0.5">
-                      <span className="text-[9px] font-black uppercase text-zinc-400">CTR</span>
-                      <p className="text-sm font-black text-zinc-800 dark:text-zinc-200">{ctr}%</p>
+                    <div>
+                      <span className="text-[10px] text-zinc-400 font-bold block uppercase">CTR</span>
+                      <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{ctr}%</span>
                     </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center justify-between pt-2">
-                    <span className="text-[9px] text-zinc-400 font-semibold">
-                      Ends: {format(new Date(ad.endDate), 'dd MMM yyyy')}
+                  <div className="flex justify-between items-center pt-2">
+                    <span className="text-[10px] text-zinc-400">
+                      {ad.startDate ? format(new Date(ad.startDate), 'dd/MM/yy') : ''} - {ad.endDate ? format(new Date(ad.endDate), 'dd/MM/yy') : 'Ongoing'}
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <form action={handleToggle.bind(null, ad.id)}>
+                      <form action={handleToggle.bind(null, ad.id, ad.isActive)}>
                         <Button variant="outline" size="sm" type="submit" className="font-semibold text-xs h-8 gap-1.5">
                           <Power className="h-3.5 w-3.5" />
-                          Toggle status
+                          {ad.isActive ? 'Pause' : 'Resume'}
                         </Button>
                       </form>
                       <form action={handleDelete.bind(null, ad.id)}>

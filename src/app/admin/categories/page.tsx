@@ -1,5 +1,4 @@
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { CategoriesTable } from './CategoriesTable';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -8,18 +7,24 @@ import { Plus } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 
 export default async function CategoriesPage() {
-  const rawCategories = await prisma.category
-    .findMany({
-      where: { deletedAt: null },
-      include: {
-        parent: { select: { name: true } },
-        _count: { select: { articles: true } },
-      },
-      orderBy: { sortOrder: 'asc' },
-    })
-    .catch(() => []);
+  const supabase = await createClient();
 
-  const categories = serializeBigInt(rawCategories);
+  const { data: rawCategories } = await supabase
+    .from('categories')
+    .select('id, name, slug, color, sort_order, is_active, parent_id')
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true });
+
+  const categories = (rawCategories || []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    color: c.color || null,
+    sortOrder: c.sort_order || 0,
+    isActive: c.is_active ?? true,
+    parent: null,
+    _count: { articles: 0 },
+  }));
 
   return (
     <div className="space-y-6">

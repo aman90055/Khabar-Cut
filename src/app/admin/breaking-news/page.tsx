@@ -16,12 +16,18 @@ const supabase = createClient(
 );
 
 export default async function BreakingNewsAdminPage() {
-  const { data: alerts } = await supabase
+  const { data: rawAlerts } = await supabase
     .from('breaking_news')
-    .select('id, article_id, headline, priority, is_active, start_at, end_at, created_at, article:articles!article_id(id, title, slug)')
+    .select('id, article_id, title, priority, is_active, expires_at, created_at, article:articles!article_id(id, title, slug)')
     .order('is_active', { ascending: false })
     .order('priority', { ascending: false })
     .order('created_at', { ascending: false });
+
+  const alerts = (rawAlerts ?? []).map((a: any) => ({
+    ...a,
+    headline: a.title,
+    end_at: a.expires_at,
+  }));
 
   const activeAlerts = alerts?.filter((a: any) => a.is_active) || [];
   const inactiveAlerts = alerts?.filter((a: any) => !a.is_active) || [];

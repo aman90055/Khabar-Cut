@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
-import { generateSlug, serializeBigInt } from '@/lib/utils';
+import { generateSlug } from '@/lib/utils';
 import { requireAuth } from '@/middleware/rbac';
+
+const adminSupabase = createAdminClient();
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -24,9 +26,12 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const body = await request.json();
     const validated = updateTagSchema.parse(body);
 
-    const existingTag = await prisma.tag.findFirst({
-      where: { id, deletedAt: null },
-    });
+    const { data: existingTag } = await adminSupabase
+      .from('tags')
+      .select('*')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
 
     if (!existingTag) {
       return NextResponse.json({ error: 'Tag not found' }, { status: 404 });
@@ -38,29 +43,40 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       slug = baseSlug;
       let counter = 1;
       while (true) {
-        const existing = await prisma.tag.findFirst({
-          where: { slug, id: { not: id }, deletedAt: null },
-        });
+        const { data: existing } = await adminSupabase
+          .from('tags')
+          .select('id')
+          .eq('slug', slug)
+          .neq('id', id)
+          .is('deleted_at', null)
+          .maybeSingle();
+
         if (!existing) break;
         slug = `${baseSlug}-${counter}`;
         counter++;
       }
     }
 
-    const updatedTag = await prisma.tag.update({
-      where: { id },
-      data: {
-        ...(validated.name && { name: validated.name }),
-        ...(validated.description !== undefined && { description: validated.description }),
-        slug,
-      },
-    });
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+      slug,
+    };
+    if (validated.name) updatePayload.name = validated.name;
+    if (validated.description !== undefined) updatePayload.description = validated.description;
 
-    return NextResponse.json({ success: true, data: serializeBigInt(updatedTag) });
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors[0].message }, { status: 400 });
+    const { data: updatedTag, error } = await adminSupabase
+      .from('tags')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    return NextResponse.json({ success: true, data: { ...updatedTag, _count: { articles: 0 } } });
+  } catch (error: any) {
     const status = error.statusCode || 500;
     return NextResponse.json({ error: error.message || 'Server error' }, { status });
   }
@@ -69,27 +85,24 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 export async function DELETE(request: Request, { params }: RouteParams) {
   try {
     const user = await requireAuth();
-    if (user.role.level > 6) {
+    if (user.role.level > 4) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
 
-    const existingTag = await prisma.tag.findFirst({
-      where: { id, deletedAt: null },
-    });
+    const { error } = await adminSupabase
+      .from('tags')
+      .update({
+        deleted_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-    if (!existingTag) {
-      return NextResponse.json({ error: 'Tag not found' }, { status: 404 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Soft delete by setting deletedAt
-    await prisma.tag.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
-
-    return NextResponse.json({ success: true, message: 'Tag deleted successfully' });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     const status = error.statusCode || 500;
     return NextResponse.json({ error: error.message || 'Server error' }, { status });

@@ -1,9 +1,11 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 import { requireAuth } from '@/middleware/rbac';
 import { z } from 'zod';
+
+const adminSupabase = createAdminClient();
 
 const updateAuthorSchema = z.object({
   id: z.string().uuid(),
@@ -29,16 +31,23 @@ export async function updateAuthor(input: z.infer<typeof updateAuthorSchema>) {
 
   const validated = updateAuthorSchema.parse(input);
 
-  const author = await prisma.author.update({
-    where: { id: validated.id },
-    data: {
-      displayName: validated.displayName,
+  const { data: author, error } = await adminSupabase
+    .from('authors')
+    .update({
+      display_name: validated.displayName,
       bio: validated.bio || null,
-      avatarUrl: validated.avatarUrl || null,
-      isVerified: validated.isVerified,
-      socialLinks: validated.socialLinks || {},
-    },
-  });
+      avatar_url: validated.avatarUrl || null,
+      is_verified: validated.isVerified,
+      social_links: validated.socialLinks || {},
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', validated.id)
+    .select()
+    .single();
+
+  if (error || !author) {
+    throw new Error(error?.message || 'Failed to update author profile');
+  }
 
   revalidatePath('/admin/authors');
   

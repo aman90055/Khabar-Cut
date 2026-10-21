@@ -1,45 +1,62 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Radio, Plus, Trash2, StopCircle, PlayCircle, MessageSquare, Clock } from 'lucide-react';
 import { format } from 'date-fns';
-import { endLiveBlog, updateLiveBlog } from '@/features/live-blogs/actions';
+import { revalidatePath } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
 
 export default async function LiveBlogsAdminPage() {
-  const blogs = await prisma.liveBlog.findMany({
-    where: { deletedAt: null },
-    include: {
-      author: {
-        include: {
-          user: { select: { fullName: true } },
-        },
-      },
-      _count: { select: { entries: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  }).catch(() => []);
+  const supabase = await createClient();
 
-  const serializedBlogs = serializeBigInt(blogs);
+  const { data: rawBlogs } = await supabase
+    .from('live_blogs')
+    .select(`
+      id, title, slug, description, status, started_at, created_at,
+      author:authors!author_id (display_name),
+      entries:live_blog_entries(count)
+    `)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const serializedBlogs = (rawBlogs || []).map((b: any) => ({
+    id: b.id,
+    title: b.title,
+    slug: b.slug,
+    description: b.description,
+    status: b.status,
+    createdAt: b.created_at || b.started_at,
+    author: {
+      displayName: b.author?.display_name || 'Admin',
+    },
+    _count: {
+      entries: b.entries?.[0]?.count || 0,
+    },
+  }));
 
   async function handleEnd(id: string) {
     'use server';
-    await endLiveBlog(id);
+    const supabase = await createClient();
+    await supabase.from('live_blogs').update({ status: 'ENDED', ended_at: new Date().toISOString() }).eq('id', id);
+    revalidatePath('/admin/live-blogs');
   }
 
   async function handlePause(id: string) {
     'use server';
-    await updateLiveBlog(id, { id, status: 'PAUSED' });
+    const supabase = await createClient();
+    await supabase.from('live_blogs').update({ status: 'PAUSED', updated_at: new Date().toISOString() }).eq('id', id);
+    revalidatePath('/admin/live-blogs');
   }
 
   async function handleResume(id: string) {
     'use server';
-    await updateLiveBlog(id, { id, status: 'ACTIVE' });
+    const supabase = await createClient();
+    await supabase.from('live_blogs').update({ status: 'ACTIVE', updated_at: new Date().toISOString() }).eq('id', id);
+    revalidatePath('/admin/live-blogs');
   }
 
   return (
@@ -58,84 +75,81 @@ export default async function LiveBlogsAdminPage() {
         </Link>
       </div>
 
-      {/* Grid of blogs */}
+      {/* Grid of live blogs */}
       {serializedBlogs.length === 0 ? (
-        <div className="text-center py-16 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
+        <div className="text-center py-20 border border-dashed rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/10 dark:border-zinc-800">
           <Radio className="h-12 w-12 text-zinc-300 dark:text-zinc-700 mx-auto" />
-          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No Live Blogs</h3>
-          <p className="text-xs text-zinc-500 mt-1">Get started by creating a new live blog event.</p>
+          <h3 className="text-base font-bold mt-4 text-zinc-900 dark:text-zinc-50">No Live Blogs Active</h3>
+          <p className="text-xs text-zinc-500 mt-1">Start your first live news event or match commentary.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-4">
           {serializedBlogs.map((blog: any) => (
-            <Card key={blog.id} className="border border-zinc-200 dark:border-zinc-800 relative bg-white dark:bg-zinc-950 flex flex-col justify-between">
-              <CardContent className="p-6 space-y-4">
-                {/* Header info */}
-                <div className="flex justify-between items-start gap-2">
-                  <div className="space-y-1">
-                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50 leading-snug line-clamp-1">
-                      {blog.title}
-                    </h3>
-                    <p className="text-xs text-zinc-500 line-clamp-2">{blog.description || 'No description provided.'}</p>
-                  </div>
-                  <Badge
-                    className={`border-none font-bold uppercase text-[9px] px-2 py-0.5 shrink-0 flex items-center gap-1 ${
+            <Card key={blog.id} className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+              <CardContent className="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge className={`border-none font-bold uppercase text-[9px] ${
                       blog.status === 'ACTIVE'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'bg-red-600 text-white animate-pulse'
                         : blog.status === 'PAUSED'
-                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                    }`}
-                  >
-                    {blog.status === 'ACTIVE' && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                    {blog.status}
-                  </Badge>
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-zinc-500 text-white'
+                    }`}>
+                      {blog.status}
+                    </Badge>
+                    <span className="text-xs text-zinc-400 font-semibold flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {format(new Date(blog.createdAt), 'dd MMM yyyy, HH:mm')}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+                    {blog.title}
+                  </h3>
+
+                  <div className="flex items-center gap-3 text-xs text-zinc-400">
+                    <span>Host: <strong className="text-zinc-700 dark:text-zinc-300">{blog.author.displayName}</strong></span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {blog._count.entries} entries
+                    </span>
+                  </div>
                 </div>
 
-                {/* Meta details */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-zinc-400 font-semibold border-t border-zinc-100 dark:border-zinc-800 pt-3.5">
-                  <span>Author: {blog.author?.displayName || 'Editorial'}</span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Started: {format(new Date(blog.startedAt || blog.createdAt), 'dd MMM HH:mm')}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MessageSquare className="h-3 w-3" />
-                    {blog._count?.entries || 0} updates
-                  </span>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex items-center justify-between gap-3 pt-2">
-                  <Link href={`/admin/live-blogs/${blog.id}`} className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full text-xs font-bold h-8">
-                      Manage Updates
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link href={`/live-blogs/${blog.id}`}>
+                    <Button variant="outline" size="sm" className="text-xs">
+                      View Public Feed
                     </Button>
                   </Link>
 
-                  <div className="flex items-center gap-2">
-                    {blog.status === 'ACTIVE' && (
-                      <form action={handlePause.bind(null, blog.id)}>
-                        <Button variant="ghost" size="sm" type="submit" className="h-8 text-amber-500 hover:text-amber-600 font-semibold text-xs gap-1">
-                          Pause
-                        </Button>
-                      </form>
-                    )}
-                    {blog.status === 'PAUSED' && (
-                      <form action={handleResume.bind(null, blog.id)}>
-                        <Button variant="ghost" size="sm" type="submit" className="h-8 text-emerald-500 hover:text-emerald-600 font-semibold text-xs gap-1">
-                          Resume
-                        </Button>
-                      </form>
-                    )}
-                    {blog.status !== 'ENDED' && (
-                      <form action={handleEnd.bind(null, blog.id)}>
-                        <Button variant="ghost" size="sm" type="submit" className="h-8 text-red-500 hover:text-red-600 font-semibold text-xs gap-1">
-                          End Blog
-                        </Button>
-                      </form>
-                    )}
-                  </div>
+                  {blog.status === 'ACTIVE' && (
+                    <form action={handlePause.bind(null, blog.id)}>
+                      <Button variant="outline" size="sm" type="submit" className="text-xs">
+                        <StopCircle className="h-3.5 w-3.5 mr-1" />
+                        Pause
+                      </Button>
+                    </form>
+                  )}
+
+                  {blog.status === 'PAUSED' && (
+                    <form action={handleResume.bind(null, blog.id)}>
+                      <Button variant="outline" size="sm" type="submit" className="text-xs">
+                        <PlayCircle className="h-3.5 w-3.5 mr-1" />
+                        Resume
+                      </Button>
+                    </form>
+                  )}
+
+                  {blog.status !== 'ENDED' && (
+                    <form action={handleEnd.bind(null, blog.id)}>
+                      <Button variant="ghost" size="sm" type="submit" className="text-xs text-red-500 hover:text-red-600">
+                        End Blog
+                      </Button>
+                    </form>
+                  )}
                 </div>
               </CardContent>
             </Card>
