@@ -52,13 +52,25 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const { error: uploadError } = await supabase.storage
+    let { error: uploadError } = await supabase.storage
       .from(BUCKET)
       .upload(filePath, buffer, {
         contentType: file.type,
         cacheControl: '31536000', // 1 year
         upsert: false,
       });
+
+    if (uploadError && uploadError.message.includes('Bucket not found')) {
+      await supabase.storage.createBucket(BUCKET, { public: true, fileSizeLimit: 52428800 });
+      const retry = await supabase.storage
+        .from(BUCKET)
+        .upload(filePath, buffer, {
+          contentType: file.type,
+          cacheControl: '31536000',
+          upsert: false,
+        });
+      uploadError = retry.error;
+    }
 
     if (uploadError) {
       console.error('[Upload] Storage error:', uploadError.message);

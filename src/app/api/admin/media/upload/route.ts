@@ -22,12 +22,23 @@ export async function POST(request: Request) {
     const uniquePath = `${Date.now()}_${cleanFileName}.${fileExt}`;
 
     // Upload to Supabase Storage bucket 'media'
-    const { error: uploadError } = await adminSupabase.storage
+    let { error: uploadError } = await adminSupabase.storage
       .from('media')
       .upload(uniquePath, buffer, {
         contentType: file.type,
         duplex: 'half',
       });
+
+    if (uploadError && uploadError.message.includes('Bucket not found')) {
+      await adminSupabase.storage.createBucket('media', { public: true, fileSizeLimit: 52428800 });
+      const retry = await adminSupabase.storage
+        .from('media')
+        .upload(uniquePath, buffer, {
+          contentType: file.type,
+          duplex: 'half',
+        });
+      uploadError = retry.error;
+    }
 
     if (uploadError) {
       console.error('Supabase storage upload error:', uploadError);
