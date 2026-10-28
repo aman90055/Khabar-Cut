@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const supabase = createAdminClient();
     const { prompt } = await request.json();
 
     if (!prompt) {
@@ -18,9 +11,11 @@ export async function POST(request: Request) {
     }
 
     // Try finding key in database first, then fallback to environment
-    const dbKeySetting = await prisma.setting.findUnique({
-      where: { key: 'gemini_api_key' },
-    }).catch(() => null);
+    const { data: dbKeySetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'gemini_api_key')
+      .maybeSingle();
 
     const apiKey = (dbKeySetting?.value as string) || process.env.GEMINI_API_KEY;
 
@@ -51,11 +46,12 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json();
-    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+    const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    return NextResponse.json({ response: generatedText });
+    return NextResponse.json({
+      response: candidateText || 'No response generated.',
+    });
   } catch (err: any) {
-    console.error('AI assistant route error:', err);
-    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

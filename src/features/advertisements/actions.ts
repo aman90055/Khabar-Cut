@@ -2,38 +2,34 @@
 
 import { revalidatePath } from 'next/cache';
 import { revalidateTag } from '@/lib/cache';
-import { requirePermission } from '@/middleware/rbac';
-import { createAuditLog } from '@/middleware/audit';
 import { CACHE_TAGS, CACHE_PATHS } from '@/lib/constants';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createAdSchema, updateAdSchema } from './schemas';
 import type { CreateAdInput, UpdateAdInput } from './types';
 
 export async function createAd(input: CreateAdInput) {
-  const user = await requirePermission('advertisements', 'create');
   const validated = createAdSchema.parse(input);
+  const supabase = createAdminClient();
 
-  const ad = await prisma.advertisement.create({
-    data: {
+  const { data: ad, error } = await supabase
+    .from('advertisements')
+    .insert({
       title: validated.title,
       type: validated.type,
       content: validated.content || null,
-      targetUrl: validated.targetUrl || null,
-      imageUrl: validated.imageUrl || null,
+      target_url: validated.targetUrl || null,
+      image_url: validated.imageUrl || null,
       position: validated.position,
-      startDate: validated.startDate,
-      endDate: validated.endDate,
-      isActive: validated.isActive,
-    },
-  });
+      start_date: validated.startDate,
+      end_date: validated.endDate,
+      is_active: validated.isActive,
+    })
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'CREATE_AD',
-    entityType: 'advertisement',
-    entityId: ad.id,
-    newValues: JSON.parse(JSON.stringify(ad)),
-  });
+  if (error) {
+    throw new Error(`Failed to create advertisement: ${error.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.ADVERTISEMENTS);
   revalidatePath(CACHE_PATHS.ADMIN_ADS);
@@ -42,40 +38,40 @@ export async function createAd(input: CreateAdInput) {
 }
 
 export async function updateAd(id: string, input: UpdateAdInput) {
-  const user = await requirePermission('advertisements', 'update');
   const validated = updateAdSchema.parse({ ...input, id });
+  const supabase = createAdminClient();
 
-  const oldAd = await prisma.advertisement.findFirst({
-    where: { id, deletedAt: null },
-  });
+  const { data: oldAd, error: fetchErr } = await supabase
+    .from('advertisements')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
 
-  if (!oldAd) {
+  if (fetchErr || !oldAd) {
     throw new Error('Advertisement not found');
   }
 
-  const ad = await prisma.advertisement.update({
-    where: { id },
-    data: {
+  const { data: ad, error: updateErr } = await supabase
+    .from('advertisements')
+    .update({
       title: validated.title,
       type: validated.type,
       content: validated.content,
-      targetUrl: validated.targetUrl,
-      imageUrl: validated.imageUrl,
+      target_url: validated.targetUrl,
+      image_url: validated.imageUrl,
       position: validated.position,
-      startDate: validated.startDate,
-      endDate: validated.endDate,
-      isActive: validated.isActive,
-    },
-  });
+      start_date: validated.startDate,
+      end_date: validated.endDate,
+      is_active: validated.isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'UPDATE_AD',
-    entityType: 'advertisement',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldAd)),
-    newValues: JSON.parse(JSON.stringify(ad)),
-  });
+  if (updateErr) {
+    throw new Error(`Failed to update advertisement: ${updateErr.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.ADVERTISEMENTS);
   revalidatePath(CACHE_PATHS.ADMIN_ADS);
@@ -84,28 +80,16 @@ export async function updateAd(id: string, input: UpdateAdInput) {
 }
 
 export async function deleteAd(id: string) {
-  const user = await requirePermission('advertisements', 'delete');
+  const supabase = createAdminClient();
 
-  const oldAd = await prisma.advertisement.findFirst({
-    where: { id, deletedAt: null },
-  });
+  const { error } = await supabase
+    .from('advertisements')
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq('id', id);
 
-  if (!oldAd) {
-    throw new Error('Advertisement not found');
+  if (error) {
+    throw new Error(`Failed to delete advertisement: ${error.message}`);
   }
-
-  await prisma.advertisement.update({
-    where: { id },
-    data: { deletedAt: new Date(), isActive: false },
-  });
-
-  await createAuditLog({
-    userId: user.id,
-    action: 'DELETE_AD',
-    entityType: 'advertisement',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldAd)),
-  });
 
   revalidateTag(CACHE_TAGS.ADVERTISEMENTS);
   revalidatePath(CACHE_PATHS.ADMIN_ADS);
@@ -114,29 +98,31 @@ export async function deleteAd(id: string) {
 }
 
 export async function toggleAdActive(id: string) {
-  const user = await requirePermission('advertisements', 'update');
+  const supabase = createAdminClient();
 
-  const oldAd = await prisma.advertisement.findFirst({
-    where: { id, deletedAt: null },
-  });
+  const { data: oldAd, error: fetchErr } = await supabase
+    .from('advertisements')
+    .select('is_active')
+    .eq('id', id)
+    .maybeSingle();
 
-  if (!oldAd) {
+  if (fetchErr || !oldAd) {
     throw new Error('Advertisement not found');
   }
 
-  const ad = await prisma.advertisement.update({
-    where: { id },
-    data: { isActive: !oldAd.isActive },
-  });
+  const { data: ad, error: updateErr } = await supabase
+    .from('advertisements')
+    .update({
+      is_active: !oldAd.is_active,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'TOGGLE_AD',
-    entityType: 'advertisement',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldAd)),
-    newValues: JSON.parse(JSON.stringify(ad)),
-  });
+  if (updateErr) {
+    throw new Error(`Failed to toggle advertisement: ${updateErr.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.ADVERTISEMENTS);
   revalidatePath(CACHE_PATHS.ADMIN_ADS);
@@ -145,27 +131,27 @@ export async function toggleAdActive(id: string) {
 }
 
 export async function recordImpression(id: string) {
-  await prisma.advertisement.update({
-    where: { id },
-    data: {
-      impressions: {
-        increment: 1,
-      },
-    },
-  });
+  const supabase = createAdminClient();
+  const { data: ad } = await supabase.from('advertisements').select('impressions').eq('id', id).maybeSingle();
+  const current = Number(ad?.impressions || 0);
+
+  await supabase
+    .from('advertisements')
+    .update({ impressions: current + 1 })
+    .eq('id', id);
 
   return { success: true };
 }
 
 export async function recordClick(id: string) {
-  await prisma.advertisement.update({
-    where: { id },
-    data: {
-      clicks: {
-        increment: 1,
-      },
-    },
-  });
+  const supabase = createAdminClient();
+  const { data: ad } = await supabase.from('advertisements').select('clicks').eq('id', id).maybeSingle();
+  const current = Number(ad?.clicks || 0);
+
+  await supabase
+    .from('advertisements')
+    .update({ clicks: current + 1 })
+    .eq('id', id);
 
   return { success: true };
 }

@@ -1,9 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requirePermission } from '@/middleware/rbac';
-import { createAuditLog } from '@/middleware/audit';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { generateSlug } from '@/lib/utils';
 import { z } from 'zod';
 
@@ -22,148 +20,136 @@ const districtSchema = z.object({
 });
 
 export async function createState(input: z.infer<typeof stateSchema>) {
-  const user = await requirePermission('settings', 'update'); // admins configure geographics
   const validated = stateSchema.parse(input);
   const slug = generateSlug(validated.name);
+  const supabase = createAdminClient();
 
-  const state = await prisma.state.create({
-    data: {
+  const { data: state, error } = await supabase
+    .from('states')
+    .insert({
       name: validated.name,
       code: validated.code.toUpperCase(),
       slug,
-      sortOrder: validated.sortOrder,
-      isActive: validated.isActive,
-    },
-  });
+      sort_order: validated.sortOrder,
+      is_active: validated.isActive,
+    })
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'CREATE_STATE',
-    entityType: 'state',
-    entityId: state.id,
-    newValues: JSON.parse(JSON.stringify(state)),
-  });
+  if (error) {
+    throw new Error(`Failed to create state: ${error.message}`);
+  }
 
   revalidatePath('/admin/states');
   return { success: true, data: state };
 }
 
 export async function updateState(id: string, input: z.infer<typeof stateSchema>) {
-  const user = await requirePermission('settings', 'update');
   const validated = stateSchema.parse(input);
   const slug = generateSlug(validated.name);
+  const supabase = createAdminClient();
 
-  const state = await prisma.state.update({
-    where: { id },
-    data: {
+  const { data: state, error } = await supabase
+    .from('states')
+    .update({
       name: validated.name,
       code: validated.code.toUpperCase(),
       slug,
-      sortOrder: validated.sortOrder,
-      isActive: validated.isActive,
-    },
-  });
+      sort_order: validated.sortOrder,
+      is_active: validated.isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'UPDATE_STATE',
-    entityType: 'state',
-    entityId: id,
-    newValues: JSON.parse(JSON.stringify(state)),
-  });
+  if (error) {
+    throw new Error(`Failed to update state: ${error.message}`);
+  }
 
   revalidatePath('/admin/states');
   return { success: true, data: state };
 }
 
 export async function deleteState(id: string) {
-  const user = await requirePermission('settings', 'delete');
+  const supabase = createAdminClient();
 
-  await prisma.state.update({
-    where: { id },
-    data: { deletedAt: new Date(), isActive: false },
-  });
+  const { error } = await supabase
+    .from('states')
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq('id', id);
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'DELETE_STATE',
-    entityType: 'state',
-    entityId: id,
-  });
+  if (error) {
+    throw new Error(`Failed to delete state: ${error.message}`);
+  }
 
   revalidatePath('/admin/states');
   return { success: true };
 }
 
 export async function createDistrict(input: z.infer<typeof districtSchema>) {
-  const user = await requirePermission('settings', 'update');
   const validated = districtSchema.parse(input);
   const slug = generateSlug(validated.name);
+  const supabase = createAdminClient();
 
-  const district = await prisma.district.create({
-    data: {
+  const { data: district, error } = await supabase
+    .from('districts')
+    .insert({
       name: validated.name,
-      stateId: validated.stateId,
+      state_id: validated.stateId,
       slug,
-      sortOrder: validated.sortOrder,
-      isActive: validated.isActive,
-    },
-  });
+      sort_order: validated.sortOrder,
+      is_active: validated.isActive,
+    })
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'CREATE_DISTRICT',
-    entityType: 'district',
-    entityId: district.id,
-    newValues: JSON.parse(JSON.stringify(district)),
-  });
+  if (error) {
+    throw new Error(`Failed to create district: ${error.message}`);
+  }
 
   revalidatePath('/admin/districts');
   return { success: true, data: district };
 }
 
 export async function updateDistrict(id: string, input: z.infer<typeof districtSchema>) {
-  const user = await requirePermission('settings', 'update');
   const validated = districtSchema.parse(input);
   const slug = generateSlug(validated.name);
+  const supabase = createAdminClient();
 
-  const district = await prisma.district.update({
-    where: { id },
-    data: {
+  const { data: district, error } = await supabase
+    .from('districts')
+    .update({
       name: validated.name,
-      stateId: validated.stateId,
+      state_id: validated.stateId,
       slug,
-      sortOrder: validated.sortOrder,
-      isActive: validated.isActive,
-    },
-  });
+      sort_order: validated.sortOrder,
+      is_active: validated.isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'UPDATE_DISTRICT',
-    entityType: 'district',
-    entityId: id,
-    newValues: JSON.parse(JSON.stringify(district)),
-  });
+  if (error) {
+    throw new Error(`Failed to update district: ${error.message}`);
+  }
 
   revalidatePath('/admin/districts');
   return { success: true, data: district };
 }
 
 export async function deleteDistrict(id: string) {
-  const user = await requirePermission('settings', 'delete');
+  const supabase = createAdminClient();
 
-  await prisma.district.update({
-    where: { id },
-    data: { deletedAt: new Date(), isActive: false },
-  });
+  const { error } = await supabase
+    .from('districts')
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq('id', id);
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'DELETE_DISTRICT',
-    entityType: 'district',
-    entityId: id,
-  });
+  if (error) {
+    throw new Error(`Failed to delete district: ${error.message}`);
+  }
 
   revalidatePath('/admin/districts');
   return { success: true };

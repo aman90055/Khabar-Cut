@@ -2,12 +2,12 @@
 // POST /api/webhooks/razorpay — Razorpay payment webhook
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { verifyRazorpayWebhook } from '@/lib/payments/razorpay';
 
 export const dynamic = 'force-dynamic';
 
-const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET!;
+const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,64 +44,68 @@ export async function POST(request: NextRequest) {
       };
     };
 
+    const supabase = createAdminClient();
+
     switch (event.event) {
       case 'payment.captured': {
         const payment = event.payload.payment?.entity;
         if (!payment) break;
 
         // Update payment record
-        await prisma.payment.updateMany({
-          where: { gatewayOrderId: payment.order_id },
-          data: {
+        await supabase
+          .from('payments')
+          .update({
             status: 'SUCCESS',
-            gatewayPaymentId: payment.id,
+            gateway_payment_id: payment.id,
             method: mapRazorpayMethod(payment.method),
-          },
-        });
+            updated_at: new Date().toISOString(),
+          })
+          .eq('gateway_order_id', payment.order_id);
 
         // Find and activate subscription
-        const dbPayment = await prisma.payment.findFirst({
-          where: { gatewayOrderId: payment.order_id },
-        });
+        const { data: dbPayment } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('gateway_order_id', payment.order_id)
+          .maybeSingle();
 
-        if (dbPayment?.paymentFor === 'SUBSCRIPTION' && dbPayment.referenceId && dbPayment.userId) {
-          const plan = await prisma.subscriptionPlan.findUnique({
-            where: { id: dbPayment.referenceId },
-          });
+        if (dbPayment?.payment_for === 'SUBSCRIPTION' && dbPayment.reference_id && dbPayment.user_id) {
+          const { data: plan } = await supabase
+            .from('subscription_plans')
+            .select('*')
+            .eq('id', dbPayment.reference_id)
+            .maybeSingle();
 
           if (plan) {
             const startDate = new Date();
-            const endDate = getEndDate(startDate, plan.billingCycle);
+            const cycle = plan.billing_cycle || plan.billingCycle;
+            const endDate = getEndDate(startDate, cycle);
 
-            await prisma.userSubscription.create({
-              data: {
-                userId: dbPayment.userId,
-                planId: plan.id,
+            const { data: sub } = await supabase
+              .from('user_subscriptions')
+              .insert({
+                user_id: dbPayment.user_id,
+                plan_id: plan.id,
                 status: 'ACTIVE',
-                startDate,
-                endDate,
-                autoRenew: true,
-              },
-            });
-
-            // Update payment with subscription link
-            const sub = await prisma.userSubscription.findFirst({
-              where: { userId: dbPayment.userId, planId: plan.id },
-              orderBy: { createdAt: 'desc' },
-            });
+                start_date: startDate.toISOString(),
+                end_date: endDate.toISOString(),
+                auto_renew: true,
+              })
+              .select('*')
+              .single();
 
             if (sub) {
-              await prisma.payment.update({
-                where: { id: dbPayment.id },
-                data: { subscriptionId: sub.id },
-              });
+              await supabase
+                .from('payments')
+                .update({ subscription_id: sub.id })
+                .eq('id', dbPayment.id);
             }
           }
         }
 
         // Generate invoice
         if (dbPayment) {
-          await generateInvoice(dbPayment.id, payment);
+          await generateInvoice(supabase, dbPayment.id, payment);
         }
 
         break;
@@ -111,13 +115,14 @@ export async function POST(request: NextRequest) {
         const payment = event.payload.payment?.entity;
         if (!payment) break;
 
-        await prisma.payment.updateMany({
-          where: { gatewayOrderId: payment.order_id },
-          data: {
+        await supabase
+          .from('payments')
+          .update({
             status: 'FAILED',
-            gatewayPaymentId: payment.id,
-          },
-        });
+            gateway_payment_id: payment.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('gateway_order_id', payment.order_id);
         break;
       }
 
@@ -125,14 +130,15 @@ export async function POST(request: NextRequest) {
         const sub = event.payload.subscription?.entity;
         if (!sub) break;
 
-        await prisma.userSubscription.updateMany({
-          where: { razorpaySubscriptionId: sub.id },
-          data: {
+        await supabase
+          .from('user_subscriptions')
+          .update({
             status: 'CANCELLED',
-            cancelledAt: new Date(),
-            autoRenew: false,
-          },
-        });
+            cancelled_at: new Date().toISOString(),
+            auto_renew: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('razorpay_subscription_id', sub.id);
         break;
       }
     }
@@ -164,44 +170,49 @@ function getEndDate(start: Date, cycle: string): Date {
   return end;
 }
 
-async function generateInvoice(paymentId: string, razorpayPayment: {
+async function generateInvoice(supabase: any, paymentId: string, razorpayPayment: {
   id: string;
   amount: number;
   notes: Record<string, string>;
 }) {
   try {
-    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('id', paymentId)
+      .maybeSingle();
+
     if (!payment) return;
 
     const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-8)}`;
     const subtotal = Number(payment.amount);
-    const gstAmount = Number(payment.gstAmount || 0);
+    const gstAmount = Number(payment.gst_amount || 0);
     const totalAmount = subtotal + gstAmount;
 
-    await prisma.invoice.create({
-      data: {
-        paymentId: payment.id,
-        invoiceNumber,
-        buyerName: razorpayPayment.notes.userName || 'Customer',
-        buyerEmail: razorpayPayment.notes.userEmail || '',
-        sellerName: 'Khabar Cut Media Pvt. Ltd.',
+    await supabase
+      .from('invoices')
+      .insert({
+        payment_id: payment.id,
+        invoice_number: invoiceNumber,
+        buyer_name: razorpayPayment.notes.userName || 'Customer',
+        buyer_email: razorpayPayment.notes.userEmail || '',
+        seller_name: 'Khabar Cut Media Pvt. Ltd.',
         items: [
           {
             description: razorpayPayment.notes.planName || 'Subscription',
             quantity: 1,
             unitPrice: subtotal,
             amount: subtotal,
-            gstRate: Number(payment.gstRate || 18),
+            gstRate: Number(payment.gst_rate || 18),
             hsnCode: '998363',
           },
         ],
         subtotal,
-        gstAmount,
-        totalAmount,
-        currency: payment.currency,
-        issueDate: new Date(),
-      },
-    });
+        gst_amount: gstAmount,
+        total_amount: totalAmount,
+        currency: payment.currency || 'INR',
+        issue_date: new Date().toISOString(),
+      });
   } catch (err) {
     console.error('Invoice generation error:', err);
   }

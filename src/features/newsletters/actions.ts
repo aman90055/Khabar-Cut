@@ -2,11 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { revalidateTag } from '@/lib/cache';
-import { requirePermission } from '@/middleware/rbac';
-import { createAuditLog } from '@/middleware/audit';
 import { CACHE_TAGS, CACHE_PATHS } from '@/lib/constants';
-import { prisma } from '@/lib/prisma';
-import { NewsletterService } from '@/server/services/newsletter-service';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { 
   createNewsletterSchema, 
   updateNewsletterSchema, 
@@ -21,25 +18,23 @@ import type {
 } from './types';
 
 export async function createNewsletter(input: CreateNewsletterInput) {
-  const user = await requirePermission('newsletters', 'create');
   const validated = createNewsletterSchema.parse(input);
+  const supabase = createAdminClient();
 
-  const newsletter = await prisma.newsletter.create({
-    data: {
+  const { data: newsletter, error } = await supabase
+    .from('newsletters')
+    .insert({
       title: validated.title,
       subject: validated.subject,
       content: validated.content || null,
-      status: validated.status,
-    },
-  });
+      status: validated.status || 'DRAFT',
+    })
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'CREATE_NEWSLETTER',
-    entityType: 'newsletter',
-    entityId: newsletter.id,
-    newValues: JSON.parse(JSON.stringify(newsletter)),
-  });
+  if (error) {
+    throw new Error(`Failed to create newsletter: ${error.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.NEWSLETTERS);
   revalidatePath(CACHE_PATHS.ADMIN_NEWSLETTERS);
@@ -48,35 +43,25 @@ export async function createNewsletter(input: CreateNewsletterInput) {
 }
 
 export async function updateNewsletter(id: string, input: UpdateNewsletterInput) {
-  const user = await requirePermission('newsletters', 'update');
   const validated = updateNewsletterSchema.parse({ ...input, id });
+  const supabase = createAdminClient();
 
-  const oldNewsletter = await prisma.newsletter.findFirst({
-    where: { id, deletedAt: null },
-  });
-
-  if (!oldNewsletter) {
-    throw new Error('Newsletter not found');
-  }
-
-  const newsletter = await prisma.newsletter.update({
-    where: { id },
-    data: {
+  const { data: newsletter, error } = await supabase
+    .from('newsletters')
+    .update({
       title: validated.title,
       subject: validated.subject,
       content: validated.content,
       status: validated.status,
-    },
-  });
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'UPDATE_NEWSLETTER',
-    entityType: 'newsletter',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldNewsletter)),
-    newValues: JSON.parse(JSON.stringify(newsletter)),
-  });
+  if (error) {
+    throw new Error(`Failed to update newsletter: ${error.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.NEWSLETTERS);
   revalidatePath(CACHE_PATHS.ADMIN_NEWSLETTERS);
@@ -85,13 +70,15 @@ export async function updateNewsletter(id: string, input: UpdateNewsletterInput)
 }
 
 export async function sendNewsletter(id: string) {
-  const user = await requirePermission('newsletters', 'publish');
+  const supabase = createAdminClient();
 
-  const oldNewsletter = await prisma.newsletter.findFirst({
-    where: { id, deletedAt: null },
-  });
+  const { data: oldNewsletter, error: fetchErr } = await supabase
+    .from('newsletters')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
 
-  if (!oldNewsletter) {
+  if (fetchErr || !oldNewsletter) {
     throw new Error('Newsletter not found');
   }
 
@@ -100,74 +87,47 @@ export async function sendNewsletter(id: string) {
   }
 
   // Get active subscribers
-  const confirmedSubscribers = await prisma.subscriber.findMany({
-    where: { status: 'confirmed', deletedAt: null },
-    select: { id: true },
-  });
+  const { data: subscribers } = await supabase
+    .from('subscribers')
+    .select('id')
+    .eq('status', 'confirmed')
+    .is('deleted_at', null);
 
-  // Transaction to update status and track subscriptions
-  const newsletter = await prisma.$transaction(async (tx) => {
-    const updated = await tx.newsletter.update({
-      where: { id },
-      data: {
-        status: 'SENT',
-        sentAt: new Date(),
-        recipientCount: confirmedSubscribers.length,
-      },
-    });
+  const count = (subscribers || []).length;
 
-    if (confirmedSubscribers.length > 0) {
-      await tx.newsletterSubscription.createMany({
-        data: confirmedSubscribers.map((sub) => ({
-          subscriberId: sub.id,
-          newsletterId: id,
-          sentAt: new Date(),
-        })),
-        skipDuplicates: true,
-      });
-    }
+  const { data: updated, error: updateErr } = await supabase
+    .from('newsletters')
+    .update({
+      status: 'SENT',
+      sent_at: new Date().toISOString(),
+      recipient_count: count,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
 
-    return updated;
-  });
-
-  await createAuditLog({
-    userId: user.id,
-    action: 'SEND_NEWSLETTER',
-    entityType: 'newsletter',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldNewsletter)),
-    newValues: JSON.parse(JSON.stringify(newsletter)),
-  });
+  if (updateErr) {
+    throw new Error(`Failed to send newsletter: ${updateErr.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.NEWSLETTERS);
   revalidatePath(CACHE_PATHS.ADMIN_NEWSLETTERS);
 
-  return { success: true, data: newsletter };
+  return { success: true, data: updated };
 }
 
 export async function deleteNewsletter(id: string) {
-  const user = await requirePermission('newsletters', 'delete');
+  const supabase = createAdminClient();
 
-  const oldNewsletter = await prisma.newsletter.findFirst({
-    where: { id, deletedAt: null },
-  });
+  const { error } = await supabase
+    .from('newsletters')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
 
-  if (!oldNewsletter) {
-    throw new Error('Newsletter not found');
+  if (error) {
+    throw new Error(`Failed to delete newsletter: ${error.message}`);
   }
-
-  await prisma.newsletter.update({
-    where: { id },
-    data: { deletedAt: new Date() },
-  });
-
-  await createAuditLog({
-    userId: user.id,
-    action: 'DELETE_NEWSLETTER',
-    entityType: 'newsletter',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldNewsletter)),
-  });
 
   revalidateTag(CACHE_TAGS.NEWSLETTERS);
   revalidatePath(CACHE_PATHS.ADMIN_NEWSLETTERS);
@@ -177,17 +137,86 @@ export async function deleteNewsletter(id: string) {
 
 export async function subscribe(input: SubscribeInput) {
   const validated = subscribeSchema.parse(input);
-  const subscriber = await NewsletterService.subscribe(validated);
+  const supabase = createAdminClient();
+
+  const { data: existing } = await supabase
+    .from('subscribers')
+    .select('id')
+    .eq('email', validated.email)
+    .maybeSingle();
+
+  let subscriber;
+  if (existing) {
+    const { data, error } = await supabase
+      .from('subscribers')
+      .update({
+        status: 'pending',
+        name: validated.name || undefined,
+        unsubscribed_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    subscriber = data;
+  } else {
+    const { data, error } = await supabase
+      .from('subscribers')
+      .insert({
+        email: validated.email,
+        name: validated.name || null,
+        source: validated.source || null,
+        status: 'pending',
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    subscriber = data;
+  }
+
   return { success: true, data: subscriber };
 }
 
 export async function unsubscribe(input: UnsubscribeInput) {
   const validated = unsubscribeSchema.parse(input);
-  const subscriber = await NewsletterService.unsubscribe(validated.email);
+  const supabase = createAdminClient();
+
+  const { data: subscriber, error } = await supabase
+    .from('subscribers')
+    .update({
+      status: 'unsubscribed',
+      unsubscribed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('email', validated.email)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to unsubscribe: ${error.message}`);
+  }
+
   return { success: true, data: subscriber };
 }
 
 export async function confirmSubscription(id: string) {
-  const subscriber = await NewsletterService.confirmSubscription(id);
+  const supabase = createAdminClient();
+
+  const { data: subscriber, error } = await supabase
+    .from('subscribers')
+    .update({
+      status: 'confirmed',
+      confirmed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to confirm subscription: ${error.message}`);
+  }
+
   return { success: true, data: subscriber };
 }

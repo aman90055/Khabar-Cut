@@ -2,7 +2,7 @@
 // /api/admin/ads/campaigns — Ad Campaign CRUD
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -29,49 +29,66 @@ export async function GET(request: NextRequest) {
     const advertiserId = searchParams.get('advertiserId');
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (status) where.status = status;
-    if (advertiserId) where.advertiserId = advertiserId;
+    const supabase = createAdminClient();
 
-    const [campaigns, total] = await Promise.all([
-      prisma.adCampaign.findMany({
-        where,
-        include: {
-          advertiser: true,
-          slot: true,
-          creatives: { where: { deletedAt: null } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.adCampaign.count({ where }),
-    ]);
+    let query = supabase
+      .from('ad_campaigns')
+      .select('*, advertiser:advertisers!advertiser_id(*), slot:ad_slots!slot_id(*)', { count: 'exact' })
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .range(skip, skip + limit - 1);
 
-    const data = campaigns.map((c) => ({
-      ...c,
+    if (status) query = query.eq('status', status);
+    if (advertiserId) query = query.eq('advertiser_id', advertiserId);
+
+    const { data: campaigns, count, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    const data = (campaigns || []).map((c: any) => ({
+      id: c.id,
+      advertiserId: c.advertiser_id,
+      slotId: c.slot_id,
+      name: c.name,
+      status: c.status,
       budget: Number(c.budget),
       spent: Number(c.spent),
-      impressions: Number(c.impressions),
-      clicks: Number(c.clicks),
-      conversions: Number(c.conversions),
+      startDate: c.start_date,
+      endDate: c.end_date,
+      targetStates: c.target_states,
+      targetDevices: c.target_devices,
+      impressions: Number(c.impressions || 0),
+      clicks: Number(c.clicks || 0),
+      conversions: Number(c.conversions || 0),
       ctr: c.ctr ? Number(c.ctr) : null,
       cpm: c.cpm ? Number(c.cpm) : null,
-      advertiser: {
-        ...c.advertiser,
-        totalSpend: Number(c.advertiser.totalSpend),
-        totalImpressions: Number(c.advertiser.totalImpressions),
-        totalClicks: Number(c.advertiser.totalClicks),
-      },
+      advertiser: c.advertiser
+        ? {
+            id: c.advertiser.id,
+            companyName: c.advertiser.company_name,
+            contactName: c.advertiser.contact_name,
+          }
+        : null,
+      slot: c.slot
+        ? {
+            id: c.slot.id,
+            name: c.slot.name,
+            position: c.slot.position,
+          }
+        : null,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
     }));
 
     return NextResponse.json({
       success: true,
       data,
-      total,
+      total: count || 0,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil((count || 0) / limit),
     });
   } catch (error) {
     console.error('Get campaigns error:', error);
@@ -83,22 +100,27 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = campaignSchema.parse(body);
+    const supabase = createAdminClient();
 
-    const campaign = await prisma.adCampaign.create({
-      data: {
-        advertiserId: data.advertiserId,
-        slotId: data.slotId,
+    const { data: campaign, error } = await supabase
+      .from('ad_campaigns')
+      .insert({
+        advertiser_id: data.advertiserId,
+        slot_id: data.slotId || null,
         name: data.name,
         status: data.status || 'DRAFT',
         budget: data.budget,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
-        targetStates: data.targetStates || [],
-        targetDevices: data.targetDevices || [],
-        notes: data.notes,
-      },
-      include: { advertiser: true, slot: true },
-    });
+        start_date: new Date(data.startDate).toISOString(),
+        end_date: new Date(data.endDate).toISOString(),
+        target_states: data.targetStates || [],
+        target_devices: data.targetDevices || [],
+      })
+      .select('*, advertiser:advertisers!advertiser_id(*), slot:ad_slots!slot_id(*)')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data: campaign }, { status: 201 });
   } catch (error) {

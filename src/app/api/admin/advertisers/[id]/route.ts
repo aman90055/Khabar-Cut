@@ -2,7 +2,7 @@
 // /api/admin/advertisers/[id] — Advertiser detail + status change
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -27,29 +27,43 @@ const updateSchema = z.object({
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const advertiser = await prisma.advertiser.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        campaigns: {
-          where: { deletedAt: null },
-          include: { slot: true, creatives: true },
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
-      },
-    });
+    const supabase = createAdminClient();
 
-    if (!advertiser) {
+    const { data: advertiser, error } = await supabase
+      .from('advertisers')
+      .select('*, campaigns:ad_campaigns(*, slot:ad_slots!slot_id(*))')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error || !advertiser) {
       return NextResponse.json({ success: false, error: 'Advertiser not found' }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
       data: {
-        ...advertiser,
-        totalSpend: Number(advertiser.totalSpend),
-        totalImpressions: Number(advertiser.totalImpressions),
-        totalClicks: Number(advertiser.totalClicks),
+        id: advertiser.id,
+        companyName: advertiser.company_name,
+        contactName: advertiser.contact_name,
+        email: advertiser.email,
+        phone: advertiser.phone,
+        website: advertiser.website,
+        gstNumber: advertiser.gst_number,
+        panNumber: advertiser.pan_number,
+        address: advertiser.address,
+        city: advertiser.city,
+        state: advertiser.state,
+        pincode: advertiser.pincode,
+        status: advertiser.status,
+        totalSpend: Number(advertiser.total_spend || 0),
+        totalImpressions: Number(advertiser.total_impressions || 0),
+        totalClicks: Number(advertiser.total_clicks || 0),
+        logoUrl: advertiser.logo_url,
+        notes: advertiser.notes,
+        campaigns: advertiser.campaigns,
+        createdAt: advertiser.created_at,
+        updatedAt: advertiser.updated_at,
       },
     });
   } catch (error) {
@@ -63,11 +77,37 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id } = await params;
     const body = await request.json();
     const data = updateSchema.parse(body);
+    const supabase = createAdminClient();
 
-    const advertiser = await prisma.advertiser.update({
-      where: { id },
-      data,
-    });
+    const updateData: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (data.companyName !== undefined) updateData.company_name = data.companyName;
+    if (data.contactName !== undefined) updateData.contact_name = data.contactName;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.website !== undefined) updateData.website = data.website;
+    if (data.gstNumber !== undefined) updateData.gst_number = data.gstNumber;
+    if (data.panNumber !== undefined) updateData.pan_number = data.panNumber;
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.city !== undefined) updateData.city = data.city;
+    if (data.state !== undefined) updateData.state = data.state;
+    if (data.pincode !== undefined) updateData.pincode = data.pincode;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.logoUrl !== undefined) updateData.logo_url = data.logoUrl;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+
+    const { data: advertiser, error } = await supabase
+      .from('advertisers')
+      .update(updateData)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data: advertiser });
   } catch (error) {
@@ -82,10 +122,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    await prisma.advertiser.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    const supabase = createAdminClient();
+
+    const { error } = await supabase
+      .from('advertisers')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true, message: 'Advertiser deleted' });
   } catch (error) {
     console.error('Delete advertiser error:', error);

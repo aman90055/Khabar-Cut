@@ -2,7 +2,7 @@
 // /api/admin/push/campaigns — Push notification campaigns
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -27,21 +27,27 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (status) where.status = status;
+    const supabase = createAdminClient();
 
-    const [campaigns, total] = await Promise.all([
-      prisma.pushCampaign.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.pushCampaign.count({ where }),
+    let query = supabase
+      .from('push_campaigns')
+      .select('*', { count: 'exact' })
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .range(skip, skip + limit - 1);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const [campaignRes, subRes] = await Promise.all([
+      query,
+      supabase.from('push_subscriptions').select('id', { count: 'exact', head: true }).eq('is_active', true),
     ]);
 
-    // Subscriber stats
-    const totalSubscribers = await prisma.pushSubscription.count({ where: { isActive: true } });
+    const campaigns = campaignRes.data || [];
+    const total = campaignRes.count || 0;
+    const totalSubscribers = subRes.count || 0;
 
     return NextResponse.json({
       success: true,
@@ -62,23 +68,34 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = campaignSchema.parse(body);
+    const supabase = createAdminClient();
 
-    const campaign = await prisma.pushCampaign.create({
-      data: {
-        ...data,
-        targetStates: data.targetStates || [],
-        targetDevices: data.targetDevices || [],
-        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : undefined,
+    const { data: campaign, error } = await supabase
+      .from('push_campaigns')
+      .insert({
+        title: data.title,
+        body: data.body,
+        icon_url: data.iconUrl || null,
+        image_url: data.imageUrl || null,
+        click_url: data.clickUrl || null,
+        target_audience: data.targetAudience,
+        target_states: data.targetStates || [],
+        target_devices: data.targetDevices || [],
+        scheduled_at: data.scheduledAt ? new Date(data.scheduledAt).toISOString() : null,
         status: data.scheduledAt ? 'SCHEDULED' : 'DRAFT',
-      },
-    });
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, data: campaign }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ success: false, error: error.errors }, { status: 400 });
     }
-    console.error('Create push campaign error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to create campaign' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -2,11 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { revalidateTag } from '@/lib/cache';
-import { requirePermission } from '@/middleware/rbac';
-import { createAuditLog } from '@/middleware/audit';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { generateSlug } from '@/lib/utils';
 import { CACHE_TAGS, CACHE_PATHS } from '@/lib/constants';
-import * as categoryDb from '@/server/db/categories';
 import { 
   createCategorySchema, 
   updateCategorySchema, 
@@ -15,35 +13,41 @@ import {
 import type { CreateCategoryInput, UpdateCategoryInput } from './types';
 
 export async function createCategory(input: CreateCategoryInput) {
-  const user = await requirePermission('categories', 'create');
   const validated = createCategorySchema.parse(input);
+  const supabase = createAdminClient();
 
   const slug = validated.slug || generateSlug(validated.name);
 
   // Check if slug exists
-  const exists = await categoryDb.checkCategorySlugExists(slug);
-  if (exists) {
+  const { data: existing } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('slug', slug)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (existing) {
     throw new Error('Category slug already exists');
   }
 
-  const category = await categoryDb.createCategory({
-    name: validated.name,
-    slug,
-    description: validated.description,
-    icon: validated.icon,
-    color: validated.color,
-    parent: validated.parentId ? { connect: { id: validated.parentId } } : undefined,
-    sortOrder: validated.sortOrder,
-    isActive: validated.isActive,
-  });
+  const { data: category, error } = await supabase
+    .from('categories')
+    .insert({
+      name: validated.name,
+      slug,
+      description: validated.description || null,
+      icon: validated.icon || null,
+      color: validated.color || null,
+      parent_id: validated.parentId || null,
+      sort_order: validated.sortOrder ?? 0,
+      is_active: validated.isActive ?? true,
+    })
+    .select('*')
+    .single();
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'CREATE_CATEGORY',
-    entityType: 'category',
-    entityId: category.id,
-    newValues: JSON.parse(JSON.stringify(category)),
-  });
+  if (error) {
+    throw new Error(`Failed to create category: ${error.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.CATEGORIES);
   revalidatePath(CACHE_PATHS.HOME);
@@ -53,71 +57,77 @@ export async function createCategory(input: CreateCategoryInput) {
 }
 
 export async function updateCategory(id: string, input: UpdateCategoryInput) {
-  const user = await requirePermission('categories', 'update');
   const validated = updateCategorySchema.parse({ ...input, id });
+  const supabase = createAdminClient();
 
-  const oldCategory = await categoryDb.findCategoryById(id);
-  if (!oldCategory) {
+  const { data: oldCategory, error: fetchErr } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchErr || !oldCategory) {
     throw new Error('Category not found');
   }
 
   const slug = validated.name ? (validated.slug || generateSlug(validated.name)) : oldCategory.slug;
 
   if (slug !== oldCategory.slug) {
-    const exists = await categoryDb.checkCategorySlugExists(slug, id);
-    if (exists) {
+    const { data: slugExists } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('slug', slug)
+      .neq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (slugExists) {
       throw new Error('Category slug already exists');
     }
   }
 
-  const category = await categoryDb.updateCategory(id, {
-    name: validated.name,
-    slug,
-    description: validated.description,
-    icon: validated.icon,
-    color: validated.color,
-    parent: validated.parentId !== undefined
-      ? (validated.parentId 
-          ? { connect: { id: validated.parentId } } 
-          : { disconnect: true })
-      : undefined,
-    sortOrder: validated.sortOrder,
-    isActive: validated.isActive,
-  });
+  const updateData: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
 
-  await createAuditLog({
-    userId: user.id,
-    action: 'UPDATE_CATEGORY',
-    entityType: 'category',
-    entityId: category.id,
-    oldValues: JSON.parse(JSON.stringify(oldCategory)),
-    newValues: JSON.parse(JSON.stringify(category)),
-  });
+  if (validated.name !== undefined) updateData.name = validated.name;
+  if (slug !== undefined) updateData.slug = slug;
+  if (validated.description !== undefined) updateData.description = validated.description;
+  if (validated.icon !== undefined) updateData.icon = validated.icon;
+  if (validated.color !== undefined) updateData.color = validated.color;
+  if (validated.parentId !== undefined) updateData.parent_id = validated.parentId || null;
+  if (validated.sortOrder !== undefined) updateData.sort_order = validated.sortOrder;
+  if (validated.isActive !== undefined) updateData.is_active = validated.isActive;
+
+  const { data: updated, error: updateErr } = await supabase
+    .from('categories')
+    .update(updateData)
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (updateErr) {
+    throw new Error(`Failed to update category: ${updateErr.message}`);
+  }
 
   revalidateTag(CACHE_TAGS.CATEGORIES);
   revalidatePath(CACHE_PATHS.HOME);
   revalidatePath(CACHE_PATHS.ADMIN_CATEGORIES);
 
-  return { success: true, data: category };
+  return { success: true, data: updated };
 }
 
 export async function deleteCategory(id: string) {
-  const user = await requirePermission('categories', 'delete');
+  const supabase = createAdminClient();
 
-  const oldCategory = await categoryDb.findCategoryById(id);
-  if (!oldCategory) {
-    throw new Error('Category not found');
+  const { error } = await supabase
+    .from('categories')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(`Failed to delete category: ${error.message}`);
   }
-
-  const category = await categoryDb.softDeleteCategory(id);
-
-  await createAuditLog({
-    userId: user.id,
-    action: 'DELETE_CATEGORY',
-    entityType: 'category',
-    entityId: id,
-    oldValues: JSON.parse(JSON.stringify(oldCategory)),
-  });
 
   revalidateTag(CACHE_TAGS.CATEGORIES);
   revalidatePath(CACHE_PATHS.HOME);
@@ -127,18 +137,17 @@ export async function deleteCategory(id: string) {
 }
 
 export async function reorderCategories(items: Array<{ id: string; sortOrder: number }>) {
-  const user = await requirePermission('categories', 'update');
   const validated = reorderCategoriesSchema.parse(items);
+  const supabase = createAdminClient();
 
-  await categoryDb.reorderCategories(validated);
-
-  await createAuditLog({
-    userId: user.id,
-    action: 'REORDER_CATEGORIES',
-    entityType: 'category',
-    entityId: 'batch',
-    newValues: validated,
-  });
+  await Promise.all(
+    validated.map((item) =>
+      supabase
+        .from('categories')
+        .update({ sort_order: item.sortOrder, updated_at: new Date().toISOString() })
+        .eq('id', item.id)
+    )
+  );
 
   revalidateTag(CACHE_TAGS.CATEGORIES);
   revalidatePath(CACHE_PATHS.HOME);

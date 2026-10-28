@@ -2,7 +2,7 @@
 // /api/admin/affiliates — Affiliate system
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -32,36 +32,43 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const skip = (page - 1) * limit;
 
-    const [affiliates, total] = await Promise.all([
-      prisma.affiliateProfile.findMany({
-        where: { deletedAt: null },
-        include: {
-          _count: { select: { conversions: true, withdrawals: true } },
-        },
-        orderBy: { totalEarned: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.affiliateProfile.count({ where: { deletedAt: null } }),
-    ]);
+    const supabase = createAdminClient();
 
-    const data = affiliates.map((a) => ({
-      ...a,
-      commissionRate: Number(a.commissionRate),
-      totalEarned: Number(a.totalEarned),
-      totalPaid: Number(a.totalPaid),
-      pendingBalance: Number(a.pendingBalance),
-      conversionCount: a._count.conversions,
-      withdrawalCount: a._count.withdrawals,
+    const { data: affiliates, count, error } = await supabase
+      .from('affiliate_profiles')
+      .select('*', { count: 'exact' })
+      .is('deleted_at', null)
+      .order('total_earned', { ascending: false })
+      .range(skip, skip + limit - 1);
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    const data = (affiliates || []).map((a: any) => ({
+      id: a.id,
+      userId: a.user_id,
+      referralCode: a.referral_code,
+      commissionRate: Number(a.commission_rate),
+      totalEarned: Number(a.total_earned),
+      totalPaid: Number(a.total_paid),
+      pendingBalance: Number(a.pending_balance),
+      bankName: a.bank_name,
+      accountNumber: a.account_number,
+      ifscCode: a.ifsc_code,
+      upiId: a.upi_id,
+      isActive: a.is_active,
+      createdAt: a.created_at,
+      updatedAt: a.updated_at,
     }));
 
     return NextResponse.json({
       success: true,
       data,
-      total,
+      total: count || 0,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil((count || 0) / limit),
     });
   } catch (error) {
     console.error('Get affiliates error:', error);
@@ -73,36 +80,51 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = affiliateSchema.parse(body);
+    const supabase = createAdminClient();
 
-    // Generate unique referral code
     let referralCode = generateReferralCode();
+    let isUnique = false;
     let attempts = 0;
-    while (attempts < 10) {
-      const existing = await prisma.affiliateProfile.findUnique({ where: { referralCode } });
-      if (!existing) break;
-      referralCode = generateReferralCode();
-      attempts++;
+
+    while (!isUnique && attempts < 10) {
+      const { data: existing } = await supabase
+        .from('affiliate_profiles')
+        .select('id')
+        .eq('referral_code', referralCode)
+        .maybeSingle();
+
+      if (!existing) {
+        isUnique = true;
+      } else {
+        referralCode = generateReferralCode();
+        attempts++;
+      }
     }
 
-    const affiliate = await prisma.affiliateProfile.create({
-      data: { ...data, referralCode },
-    });
+    const { data: affiliate, error } = await supabase
+      .from('affiliate_profiles')
+      .insert({
+        user_id: data.userId,
+        referral_code: referralCode,
+        commission_rate: data.commissionRate,
+        bank_name: data.bankName || null,
+        account_number: data.accountNumber || null,
+        ifsc_code: data.ifscCode || null,
+        upi_id: data.upiId || null,
+      })
+      .select('*')
+      .single();
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...affiliate,
-        commissionRate: Number(affiliate.commissionRate),
-        totalEarned: Number(affiliate.totalEarned),
-        totalPaid: Number(affiliate.totalPaid),
-        pendingBalance: Number(affiliate.pendingBalance),
-      },
-    }, { status: 201 });
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data: affiliate }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ success: false, error: error.errors }, { status: 400 });
     }
     console.error('Create affiliate error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to create affiliate' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to create affiliate profile' }, { status: 500 });
   }
 }

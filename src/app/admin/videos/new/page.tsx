@@ -1,22 +1,27 @@
 import * as React from 'react';
-import { prisma } from '@/lib/prisma';
-import { serializeBigInt } from '@/lib/utils';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NewVideoForm } from './NewVideoForm';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewVideoPage() {
-  const categories = await prisma.category.findMany({
-    where: { deletedAt: null, isActive: true },
-    select: { id: true, name: true },
-    orderBy: { name: 'asc' },
-  }).catch(() => []);
+  const supabase = createAdminClient();
 
-  const serializedCategories = serializeBigInt(categories);
+  const { data: rawCategories } = await supabase
+    .from('categories')
+    .select('id, name')
+    .is('deleted_at', null)
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+
+  const categories = (rawCategories || []).map((c: any) => ({
+    id: c.id,
+    name: c.name,
+  }));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <NewVideoForm categories={serializedCategories} />
+      <NewVideoForm categories={categories} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 // /api/global/wire — Internal Wire Service Distribution Queue
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -33,31 +33,46 @@ export async function GET(request: NextRequest) {
       offset: searchParams.get('offset') || undefined,
     });
 
-    const where: Record<string, any> = { deletedAt: null };
-    if (params.priority) where.priority = params.priority;
-    if (params.language) where.language = params.language;
+    const supabase = createAdminClient();
+    const now = new Date().toISOString();
 
-    // Filter out embargoed items that are still active
-    const now = new Date();
-    where.OR = [
-      { embargoUntil: null },
-      { embargoUntil: { lt: now } },
-    ];
+    let query = supabase
+      .from('wire_items')
+      .select('*', { count: 'exact' })
+      .is('deleted_at', null)
+      .or(`embargo_until.is.null,embargo_until.lt.${now}`)
+      .order('created_at', { ascending: false })
+      .range(params.offset, params.offset + params.limit - 1);
 
-    const [items, total] = await Promise.all([
-      prisma.wireItem.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: params.limit,
-        skip: params.offset,
-      }),
-      prisma.wireItem.count({ where }),
-    ]);
+    if (params.priority) {
+      query = query.eq('priority', params.priority);
+    }
+    if (params.language) {
+      query = query.eq('language', params.language);
+    }
+
+    const { data: items, count, error } = await query;
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    const formatted = (items || []).map((item: any) => ({
+      id: item.id,
+      title: item.title,
+      content: item.content,
+      priority: item.priority,
+      source: item.source,
+      language: item.language,
+      embargoUntil: item.embargo_until,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+    }));
 
     return NextResponse.json({
       success: true,
-      data: items,
-      total,
+      data: formatted,
+      total: count || 0,
       limit: params.limit,
       offset: params.offset,
     });
@@ -74,17 +89,24 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = wireCreateSchema.parse(body);
+    const supabase = createAdminClient();
 
-    const wireItem = await prisma.wireItem.create({
-      data: {
+    const { data: wireItem, error } = await supabase
+      .from('wire_items')
+      .insert({
         title: data.title,
         content: data.content,
         priority: data.priority,
         source: data.source,
         language: data.language,
-        embargoUntil: data.embargoUntil ? new Date(data.embargoUntil) : null,
-      },
-    });
+        embargo_until: data.embargoUntil ? new Date(data.embargoUntil).toISOString() : null,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,

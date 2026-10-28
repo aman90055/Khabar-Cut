@@ -2,7 +2,7 @@
 // GET /api/admin/revenue/chart — Time-series revenue data
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,17 +29,17 @@ export async function GET(request: NextRequest) {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     }
 
-    const snapshots = await prisma.revenueSnapshot.findMany({
-      where: { date: { gte: startDate } },
-      orderBy: { date: 'asc' },
-      select: {
-        date: true,
-        source: true,
-        revenue: true,
-        impressions: true,
-        clicks: true,
-      },
-    });
+    const supabase = createAdminClient();
+
+    const { data: snapshots, error } = await supabase
+      .from('revenue_snapshots')
+      .select('date, source, revenue, impressions, clicks')
+      .gte('date', startDate.toISOString())
+      .order('date', { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
 
     // Group by date
     const byDate = new Map<string, {
@@ -51,8 +51,8 @@ export async function GET(request: NextRequest) {
       adRevenue: number;
     }>();
 
-    for (const snap of snapshots) {
-      const dateStr = snap.date.toISOString().split('T')[0];
+    for (const snap of snapshots || []) {
+      const dateStr = new Date(snap.date).toISOString().split('T')[0];
       const existing = byDate.get(dateStr) || {
         date: dateStr,
         revenue: 0,
@@ -62,10 +62,10 @@ export async function GET(request: NextRequest) {
         adRevenue: 0,
       };
 
-      const rev = Number(snap.revenue);
+      const rev = Number(snap.revenue || 0);
       existing.revenue += rev;
-      existing.impressions += Number(snap.impressions);
-      existing.clicks += Number(snap.clicks);
+      existing.impressions += Number(snap.impressions || 0);
+      existing.clicks += Number(snap.clicks || 0);
 
       if (snap.source === 'subscription') {
         existing.subscriptionRevenue += rev;
@@ -76,16 +76,13 @@ export async function GET(request: NextRequest) {
       byDate.set(dateStr, existing);
     }
 
-    const chartData = Array.from(byDate.values()).map((d) => ({
-      ...d,
-      revenue: Math.round(d.revenue * 100) / 100,
-      subscriptionRevenue: Math.round(d.subscriptionRevenue * 100) / 100,
-      adRevenue: Math.round(d.adRevenue * 100) / 100,
-    }));
-
-    return NextResponse.json({ success: true, data: chartData });
+    return NextResponse.json({
+      success: true,
+      period,
+      data: Array.from(byDate.values()),
+    });
   } catch (error) {
     console.error('Revenue chart error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch chart data' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to fetch revenue chart' }, { status: 500 });
   }
 }

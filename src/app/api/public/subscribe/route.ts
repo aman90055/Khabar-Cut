@@ -2,7 +2,7 @@
 // POST /api/public/subscribe — Initiate subscription checkout via Razorpay
 // =============================================================================
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { createRazorpayOrder, getRazorpayPublicKey } from '@/lib/payments/razorpay';
 import { z } from 'zod';
 
@@ -21,47 +21,59 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const data = checkoutSchema.parse(body);
+    const supabase = createAdminClient();
 
     // Fetch plan
-    const plan = await prisma.subscriptionPlan.findFirst({
-      where: { id: data.planId, isActive: true, deletedAt: null },
-    });
+    const { data: plan, error: planErr } = await supabase
+      .from('subscription_plans')
+      .select('*')
+      .eq('id', data.planId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .maybeSingle();
 
-    if (!plan) {
+    if (planErr || !plan) {
       return NextResponse.json({ success: false, error: 'Plan not found or inactive' }, { status: 404 });
     }
 
-    const amountInPaise = Math.round(Number(plan.price) * 100);
+    const price = Number(plan.price);
+    const amountInPaise = Math.round(price * 100);
     const receipt = `sub_${data.userId.slice(0, 8)}_${Date.now()}`;
 
     // Create Razorpay order
     const razorpayOrder = await createRazorpayOrder({
       amount: amountInPaise,
-      currency: plan.currency,
+      currency: plan.currency || 'INR',
       receipt,
       notes: {
         planId: plan.id,
         planName: plan.name,
         userId: data.userId,
-        billingCycle: plan.billingCycle,
+        billingCycle: plan.billing_cycle || plan.billingCycle,
       },
     });
 
     // Create pending payment record
-    const payment = await prisma.payment.create({
-      data: {
-        userId: data.userId,
-        amount: Number(plan.price),
-        currency: plan.currency,
+    const { data: payment, error: payErr } = await supabase
+      .from('payments')
+      .insert({
+        user_id: data.userId,
+        amount: price,
+        currency: plan.currency || 'INR',
         status: 'PENDING',
-        paymentFor: 'SUBSCRIPTION',
-        referenceId: plan.id,
-        gatewayOrderId: razorpayOrder.id,
-        gstRate: 18,
-        gstAmount: Number(plan.price) * 0.18,
+        payment_for: 'SUBSCRIPTION',
+        reference_id: plan.id,
+        gateway_order_id: razorpayOrder.id,
+        gst_rate: 18,
+        gst_amount: price * 0.18,
         notes: `Subscription: ${plan.name}`,
-      },
-    });
+      })
+      .select('*')
+      .single();
+
+    if (payErr) {
+      return NextResponse.json({ success: false, error: payErr.message }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -69,17 +81,11 @@ export async function POST(request: NextRequest) {
         orderId: razorpayOrder.id,
         paymentId: payment.id,
         amount: amountInPaise,
-        currency: plan.currency,
+        currency: plan.currency || 'INR',
         keyId: getRazorpayPublicKey(),
         plan: {
           name: plan.name,
-          billingCycle: plan.billingCycle,
-          price: Number(plan.price),
-        },
-        prefill: {
-          name: data.name,
-          email: data.email,
-          contact: data.phone || '',
+          billingCycle: plan.billing_cycle || plan.billingCycle,
         },
       },
     });
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ success: false, error: error.errors }, { status: 400 });
     }
-    console.error('Subscribe checkout error:', error);
+    console.error('Subscription checkout error:', error);
     return NextResponse.json({ success: false, error: 'Failed to initiate checkout' }, { status: 500 });
   }
 }

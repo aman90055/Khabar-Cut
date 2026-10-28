@@ -70,6 +70,19 @@ export default function CRMPage() {
   const [noteType, setNoteType] = useState('GENERAL');
   const [addingNote, setAddingNote] = useState(false);
   const [view, setView] = useState<'table' | 'kanban'>('table');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [creatingLead, setCreatingLead] = useState(false);
+  const [newLead, setNewLead] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    company: '',
+    designation: '',
+    value: '',
+    source: 'WEBSITE',
+    status: 'NEW',
+    notes: '',
+  });
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -87,6 +100,46 @@ export default function CRMPage() {
   }, [search, statusFilter]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  const handleCreateLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLead.name.trim()) return;
+    setCreatingLead(true);
+    try {
+      const stage = STAGES.findIndex((s) => s.status === newLead.status);
+      const res = await fetch('/api/admin/crm/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newLead,
+          value: newLead.value ? parseFloat(newLead.value) : undefined,
+          pipelineStage: stage >= 0 ? stage : 0,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setShowAddModal(false);
+        setNewLead({
+          name: '',
+          email: '',
+          phone: '',
+          company: '',
+          designation: '',
+          value: '',
+          source: 'WEBSITE',
+          status: 'NEW',
+          notes: '',
+        });
+        fetchLeads();
+      } else {
+        alert(json.error || 'Failed to create lead');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error creating lead');
+    } finally {
+      setCreatingLead(false);
+    }
+  };
 
   const updateLeadStatus = async (id: string, status: string) => {
     const stage = STAGES.findIndex((s) => s.status === status);
@@ -122,7 +175,10 @@ export default function CRMPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Lead Management CRM</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sales pipeline & lead tracking</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700">
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700 transition-colors cursor-pointer"
+        >
           <Plus className="w-4 h-4" />
           Add Lead
         </button>
@@ -363,6 +419,137 @@ export default function CRMPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Add Lead Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full border border-gray-100 dark:border-gray-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add New Sales Lead</h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateLead} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newLead.name}
+                    onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
+                    placeholder="e.g. Rahul Sharma"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Company Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newLead.company}
+                    onChange={(e) => setNewLead({ ...newLead, company: e.target.value })}
+                    placeholder="e.g. Tata Motors"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={newLead.email}
+                    onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                    placeholder="client@example.com"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Phone Number
+                  </label>
+                  <input
+                    type="text"
+                    value={newLead.phone}
+                    onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                    placeholder="+91 9876543210"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Deal Value (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={newLead.value}
+                    onChange={(e) => setNewLead({ ...newLead, value: e.target.value })}
+                    placeholder="50000"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                    Initial Status
+                  </label>
+                  <select
+                    value={newLead.status}
+                    onChange={(e) => setNewLead({ ...newLead, status: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  >
+                    {STAGES.map((s) => (
+                      <option key={s.status} value={s.status}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">
+                  Notes / Requirement Summary
+                </label>
+                <textarea
+                  value={newLead.notes}
+                  onChange={(e) => setNewLead({ ...newLead, notes: e.target.value })}
+                  placeholder="Requirement details, proposed ad positions, campaign dates..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingLead || !newLead.name.trim()}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  {creatingLead ? 'Creating...' : 'Create Lead'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
