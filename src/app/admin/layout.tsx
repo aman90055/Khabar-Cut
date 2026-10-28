@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Header } from '@/components/layout/header';
+import { AdminHeader } from '@/components/admin/admin-header';
 import { AdminSidebar } from '@/components/layout/admin-sidebar';
 import { AIAssistant } from '@/components/admin/ai-assistant';
 import { getAuthUser } from '@/lib/supabase/server';
@@ -26,9 +26,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <AdminSidebar />
       </aside>
 
-      {/* Right column: header + scrollable content */}
+      {/* Right column: admin header + scrollable content */}
       <div className="flex flex-1 flex-col min-w-0">
-        <Header />
+        <AdminHeader />
         <main className="flex-1 overflow-y-auto bg-zinc-50 dark:bg-zinc-950 p-6">
           {children}
         </main>
