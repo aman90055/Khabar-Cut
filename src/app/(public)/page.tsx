@@ -18,8 +18,8 @@ import {
 import { getActiveBreakingNews } from '@/lib/db/breaking-news';
 import type { ArticleListItem } from '@/types/supabase';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Cache homepage on Vercel CDN with ISR revalidation every 60 seconds
+export const revalidate = 60;
 
 // ── Fallback data for when DB is empty ───────────────────────
 import { ARTICLES_DATA } from '@/data/news-articles';

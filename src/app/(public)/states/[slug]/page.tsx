@@ -10,6 +10,8 @@ import type { Metadata } from 'next';
 import { Clock, User } from 'lucide-react';
 import type { ArticleListItem } from '@/types/supabase';
 
+export const revalidate = 60;
+
 // Helper functions
 const imgUrl = (article: any) => 
   article.featured_image?.public_url || article.featuredImage?.url || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&q=80';

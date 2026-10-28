@@ -64,6 +64,7 @@ export default function CRMPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [selected, setSelected] = useState<Lead | null>(null);
   const [noteContent, setNoteContent] = useState('');
@@ -84,20 +85,33 @@ export default function CRMPage() {
     notes: '',
   });
 
+  // Debounce search input by 300ms to eliminate UI stutter and network thrashing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ page: '1', limit: '50' });
-    if (search) params.set('search', search);
+    if (debouncedSearch) params.set('search', debouncedSearch);
     if (statusFilter) params.set('status', statusFilter);
-    const res = await fetch(`/api/admin/crm/leads?${params}`);
-    const json = await res.json();
-    if (json.success) {
-      setLeads(json.data);
-      setTotal(json.total);
-      setPipelineStats(json.pipelineStats || []);
+    try {
+      const res = await fetch(`/api/admin/crm/leads?${params}`);
+      const json = await res.json();
+      if (json.success) {
+        setLeads(json.data);
+        setTotal(json.total);
+        setPipelineStats(json.pipelineStats || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch CRM leads:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [search, statusFilter]);
+  }, [debouncedSearch, statusFilter]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 

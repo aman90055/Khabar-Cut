@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Play, Video, Clock, Eye, Calendar, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
+// Cache videos on Vercel CDN with ISR revalidation every 60 seconds
+export const revalidate = 60;
 
 export default async function VideosPublicPage() {
   const supabase = await createClient();

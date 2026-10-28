@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
 import { BookOpen } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
+// Cache visual web stories on Vercel CDN with ISR revalidation every 60 seconds
+export const revalidate = 60;
 
 export default async function WebStoriesPublicPage() {
   const supabase = await createClient();

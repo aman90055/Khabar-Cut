@@ -14,8 +14,8 @@ import { InArticleAd, SidebarAd } from '@/components/ads/google-ad';
 import { getArticleBySlug, getPublishedArticles } from '@/lib/db/articles';
 import { CommentsSection } from '@/components/comments/comments-section';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Cache individual articles on Vercel CDN with ISR revalidation every 300 seconds (5 mins)
+export const revalidate = 300;
 
 interface ArticlePageProps {
   params: Promise<{

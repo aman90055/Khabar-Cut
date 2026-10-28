@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getPublishedArticles } from '@/lib/db/articles';
 import { MapPin, ChevronRight, Newspaper } from 'lucide-react';
 
+export const revalidate = 60;
+
 interface Props {
   params: Promise<{ state: string; district: string }>;
 }

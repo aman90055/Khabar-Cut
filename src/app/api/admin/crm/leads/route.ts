@@ -58,9 +58,19 @@ export async function GET(request: NextRequest) {
       queryBuilder = queryBuilder.or(`name.ilike.%${search}%,email.ilike.%${search}%,company.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
-    const { data: leads, count, error } = await queryBuilder
-      .order('created_at', { ascending: false })
-      .range(skip, skip + limit - 1);
+    // Run queryBuilder and pipeline stats aggregation query concurrently in parallel
+    const [leadsResponse, statsResponse] = await Promise.all([
+      queryBuilder
+        .order('created_at', { ascending: false })
+        .range(skip, skip + limit - 1),
+      adminSupabase
+        .from('leads')
+        .select('status, value')
+        .is('deleted_at', null),
+    ]);
+
+    const { data: leads, count, error } = leadsResponse;
+    const { data: allActiveLeads } = statsResponse;
 
     if (error) {
       console.error('Supabase get leads error:', error);
@@ -68,12 +78,6 @@ export async function GET(request: NextRequest) {
     }
 
     const total = count || 0;
-
-    // Fetch all active leads for pipelineStats aggregation
-    const { data: allActiveLeads } = await adminSupabase
-      .from('leads')
-      .select('status, value')
-      .is('deleted_at', null);
 
     const statsMap: Record<string, { count: number; totalValue: number }> = {};
     for (const lead of allActiveLeads || []) {

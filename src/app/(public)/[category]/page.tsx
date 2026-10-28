@@ -7,8 +7,8 @@ import { getCategoryBySlug } from '@/lib/db/categories';
 import { getPublishedArticles } from '@/lib/db/articles';
 import { ARTICLES_DATA } from '@/data/news-articles';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Cache category feeds on Vercel CDN with ISR revalidation every 60 seconds
+export const revalidate = 60;
 
 const CATEGORY_NAMES: Record<string, string> = {
   national: 'भारत (National)',

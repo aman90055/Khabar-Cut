@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Radio, Calendar, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
+// Cache live blogs on Vercel CDN with ISR revalidation every 30 seconds
+export const revalidate = 30;
 
 export default async function LiveBlogsPublicPage() {
   const supabase = await createClient();

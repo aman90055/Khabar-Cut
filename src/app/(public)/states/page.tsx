@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   description: 'सभी राज्यों की ताज़ा खबरें',
 };
 
+export const revalidate = 120;
+
 const FALLBACK_STATES = [
   { id: '1', name: 'झारखंड', slug: 'jharkhand', code: 'JH', is_active: true, created_at: '' },
   { id: '2', name: 'बिहार', slug: 'bihar', code: 'BR', is_active: true, created_at: '' },
