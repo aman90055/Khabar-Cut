@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 
 export async function middleware(request: NextRequest) {
-  // 1. Refresh Supabase auth session
-  let response = await updateSession(request);
+  // 1. Refresh Supabase auth session and get authenticated user
+  const { response, user } = await updateSession(request);
   
   // 2. Set Security Headers
   response.headers.set('X-Frame-Options', 'DENY');
@@ -19,11 +19,7 @@ export async function middleware(request: NextRequest) {
   // 3. Guard Admin Dashboard routes
   const { pathname } = request.nextUrl;
   if (pathname.startsWith('/admin')) {
-    const hasSession = request.cookies.getAll().some((cookie) => 
-      cookie.name.startsWith('sb-') || cookie.name.includes('auth') || cookie.name.includes('token')
-    );
-
-    if (!hasSession) {
+    if (!user) {
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('redirectTo', pathname);
       return NextResponse.redirect(loginUrl);

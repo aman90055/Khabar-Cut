@@ -2,10 +2,23 @@ import type { ReactNode } from 'react';
 import { Header } from '@/components/layout/header';
 import { AdminSidebar } from '@/components/layout/admin-sidebar';
 import { AIAssistant } from '@/components/admin/ai-assistant';
-import { requireAuth } from '@/middleware/rbac';
+import { getAuthUser } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+
+export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  await requireAuth();
+  let authUser = null;
+  try {
+    authUser = await getAuthUser();
+  } catch {
+    authUser = null;
+  }
+
+  if (!authUser) {
+    redirect('/login?redirectTo=/admin');
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       {/* Sidebar: hidden on mobile, visible md+ */}
@@ -26,4 +39,3 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     </div>
   );
 }
-

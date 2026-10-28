@@ -29,8 +29,8 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh token if necessary
-  await supabase.auth.getUser();
+  // Refresh token and get real authenticated user
+  const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
 
-  return response;
+  return { response, user };
 }
