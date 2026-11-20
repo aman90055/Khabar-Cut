@@ -11,13 +11,19 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { state, district } = await params;
+  const { state: rawState, district: rawDistrict } = await params;
+  let state = rawState;
+  let district = rawDistrict;
+  try {
+    state = decodeURIComponent(rawState);
+    district = decodeURIComponent(rawDistrict);
+  } catch {}
   const supabase = await createClient();
   const { data: dist } = await supabase
     .from('districts')
     .select('name, states!state_id(name, slug)')
-    .eq('slug', district)
-    .single();
+    .or(`slug.eq.${district},slug.eq.${rawDistrict}`)
+    .maybeSingle();
   const distName = dist?.name || district;
   const stateName = (dist?.states as any)?.name || state;
   return {
@@ -27,7 +33,13 @@ export async function generateMetadata({ params }: Props) {
 }
 
 export default async function DistrictPage({ params }: Props) {
-  const { state: stateSlug, district: districtSlug } = await params;
+  const { state: rawStateSlug, district: rawDistrictSlug } = await params;
+  let stateSlug = rawStateSlug;
+  let districtSlug = rawDistrictSlug;
+  try {
+    stateSlug = decodeURIComponent(rawStateSlug);
+    districtSlug = decodeURIComponent(rawDistrictSlug);
+  } catch {}
   const supabase = await createClient();
 
   // Get district with state info

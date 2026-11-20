@@ -27,7 +27,7 @@ export interface ArticleCardProps {
 }
 
 export function ArticleCard({ article, variant = 'default', className }: ArticleCardProps) {
-  const articleUrl = `/${article.category?.slug || 'news'}/${article.slug}`;
+  const articleUrl = `/${article.category?.slug || 'national'}/${article.slug}`;
   const viewCount = article.viewCount?.toString() ?? '0';
   const readDate = article.publishedAt
     ? new Date(article.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })

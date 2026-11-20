@@ -48,7 +48,11 @@ interface CategoryPageProps {
 }
 
 export default async function CategoryPage({ params }: CategoryPageProps) {
-  const { category: categorySlug } = await params;
+  const { category: rawCategorySlug } = await params;
+  let categorySlug = rawCategorySlug;
+  try {
+    categorySlug = decodeURIComponent(rawCategorySlug);
+  } catch {}
 
   // Fetch category and articles from Supabase
   const [category, sbArticles] = await Promise.all([

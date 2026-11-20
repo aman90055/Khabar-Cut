@@ -121,13 +121,45 @@ export async function getArticleBySlug(
 ): Promise<ArticleWithRelations | null> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let decodedSlug = articleSlug;
+  try {
+    decodedSlug = decodeURIComponent(articleSlug);
+  } catch {}
+
+  // 1. Try with decodedSlug
+  let { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_FULL_SELECT)
-    .eq('slug', articleSlug)
+    .eq('slug', decodedSlug)
     .eq('status', 'PUBLISHED')
     .eq('visibility', 'PUBLIC')
-    .single();
+    .maybeSingle();
+
+  // 2. If not found, try with raw articleSlug
+  if (!data && decodedSlug !== articleSlug) {
+    const res = await supabase
+      .from('articles')
+      .select(ARTICLE_FULL_SELECT)
+      .eq('slug', articleSlug)
+      .eq('status', 'PUBLISHED')
+      .eq('visibility', 'PUBLIC')
+      .maybeSingle();
+    data = res.data;
+  }
+
+  // 3. Fallback: try by UUID in case slug is id
+  if (!data) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decodedSlug);
+    if (isUuid) {
+      const res = await supabase
+        .from('articles')
+        .select(ARTICLE_FULL_SELECT)
+        .eq('id', decodedSlug)
+        .eq('status', 'PUBLISHED')
+        .maybeSingle();
+      data = res.data;
+    }
+  }
 
   if (error || !data) {
     return null;

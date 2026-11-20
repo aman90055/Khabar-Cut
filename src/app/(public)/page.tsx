@@ -26,12 +26,9 @@ import { ARTICLES_DATA } from '@/data/news-articles';
 
 // Helper: format article URL from supabase or fallback
 function articleUrl(article: any): string {
-  if (article.category?.slug && article.slug) {
-    return `/${article.category.slug}/${article.slug}`;
-  }
-  // legacy fallback
-  if (article.category?.slug) return `/article/${article.slug}`;
-  return `/article/${article.slug}`;
+  const cat = article.category?.slug || 'national';
+  const slug = article.slug || '';
+  return `/${cat}/${slug}`;
 }
 
 // Helper: get featured image url from supabase or fallback data

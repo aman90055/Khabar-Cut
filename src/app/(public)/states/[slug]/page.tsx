@@ -38,10 +38,14 @@ type Props = {
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  let slug = rawSlug;
+  try {
+    slug = decodeURIComponent(rawSlug);
+  } catch {}
   let state = await getStateBySlug(slug);
   if (!state) {
-    state = FALLBACK_STATES.find((s) => s.slug === slug) as any;
+    state = FALLBACK_STATES.find((s) => s.slug === slug || s.slug === rawSlug) as any;
   }
   return {
     title: `${state?.name || slug} समाचार | Khabar Cut`,
@@ -50,12 +54,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function StatePage({ params }: Props) {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  let slug = rawSlug;
+  try {
+    slug = decodeURIComponent(rawSlug);
+  } catch {}
   
-  let state = await getStateBySlug(slug);
+  let state = (await getStateBySlug(slug)) || (await getStateBySlug(rawSlug));
   
   if (!state) {
-    const fallbackState = FALLBACK_STATES.find(s => s.slug === slug);
+    const fallbackState = FALLBACK_STATES.find(s => s.slug === slug || s.slug === rawSlug);
     if (!fallbackState) {
       notFound();
     }
@@ -96,7 +104,7 @@ export default async function StatePage({ params }: Props) {
               {articles.map((article: any) => (
                 <Link
                   key={article.id}
-                  href={`/${article.category?.slug || 'news'}/${article.slug}`}
+                  href={`/${article.category?.slug || 'national'}/${article.slug}`}
                   className="group rounded-xl border border-white/10 bg-white/5 overflow-hidden flex flex-col hover:border-primary/50 transition-colors"
                 >
                   <div className="aspect-[16/9] relative overflow-hidden">

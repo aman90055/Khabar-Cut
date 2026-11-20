@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
@@ -157,15 +158,62 @@ const MOCK_RELATED = [
 
 import { ARTICLES_DATA } from '@/data/news-articles';
 
+export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {
+  const { category: rawCat, slug: rawSlug } = await params;
+  let slug = rawSlug;
+  try {
+    slug = decodeURIComponent(rawSlug);
+  } catch {}
+  let category = rawCat;
+  try {
+    category = decodeURIComponent(rawCat);
+  } catch {}
+
+  const article: any = (await getArticleBySlug(category, slug)) || (await getArticleBySlug(category, rawSlug));
+  if (!article) {
+    return {
+      title: 'खबर कट (Khabar Cut) - ताज़ा समाचार',
+    };
+  }
+
+  const title = article.title;
+  const description = article.excerpt || article.short_description || `${title} - पढ़ें पूरी खबर खबर कट पर।`;
+  const img = article.featured_image?.url || article.featured_image?.public_url || '/logo.png';
+
+  return {
+    title: `${title} | Khabar Cut`,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: [{ url: img }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [img],
+    },
+  };
+}
+
 export default async function ArticleDetailPage({ params }: ArticlePageProps) {
-  const { category: categorySlug, slug } = await params;
+  const { category: rawCategorySlug, slug: rawSlug } = await params;
+  let categorySlug = rawCategorySlug;
+  try {
+    categorySlug = decodeURIComponent(rawCategorySlug);
+  } catch {}
+  let slug = rawSlug;
+  try {
+    slug = decodeURIComponent(rawSlug);
+  } catch {}
 
-  // 1. Try Supabase 25-table schema first
-  const sbArticle = await getArticleBySlug(categorySlug, slug);
+  // 1. Try Supabase schema first (using decoded and raw slug)
+  const sbArticle = (await getArticleBySlug(categorySlug, slug)) || (await getArticleBySlug(categorySlug, rawSlug));
 
-  // 2. Fallback: static ARTICLES_DATA or MOCK_ARTICLE
-  const matchedFromArticlesData = ARTICLES_DATA.find((a: any) => a.slug === slug);
-  const rawData = sbArticle ?? matchedFromArticlesData ?? (slug === MOCK_ARTICLE.slug ? MOCK_ARTICLE : ARTICLES_DATA[0]);
+  // 2. Fallback: static ARTICLES_DATA only if exact slug matches!
+  const matchedFromArticlesData = ARTICLES_DATA.find((a: any) => a.slug === slug || a.slug === rawSlug);
+  const rawData = sbArticle ?? matchedFromArticlesData ?? (slug === MOCK_ARTICLE.slug || rawSlug === MOCK_ARTICLE.slug ? MOCK_ARTICLE : null);
 
   if (!rawData) {
     notFound();
