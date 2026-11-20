@@ -13,6 +13,7 @@ import { ArticleActions } from '@/components/articles/article-actions';
 import { InArticleAd, SidebarAd } from '@/components/ads/google-ad';
 import { getArticleBySlug, getPublishedArticles } from '@/lib/db/articles';
 import { CommentsSection } from '@/components/comments/comments-section';
+import { ArticleViewTracker } from '@/components/analytics/article-view-tracker';
 
 // Cache individual articles on Vercel CDN with ISR revalidation every 300 seconds (5 mins)
 export const revalidate = 300;
@@ -280,6 +281,7 @@ export default async function ArticleDetailPage({ params }: ArticlePageProps) {
 
   return (
     <>
+      <ArticleViewTracker articleId={data.id} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

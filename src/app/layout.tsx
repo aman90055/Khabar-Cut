@@ -4,6 +4,8 @@ import "./globals.css";
 import { Providers } from "@/store/providers";
 import { siteConfig } from "@/config/site";
 import { AdSenseScript } from "@/components/ads/adsense-script";
+import { PageViewTracker } from "@/components/analytics/pageview-tracker";
+import { Suspense } from "react";
 import Script from "next/script";
 
 const geistSans = Geist({
@@ -202,7 +204,12 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-        <Providers>{children}</Providers>
+        <Providers>
+          <Suspense fallback={null}>
+            <PageViewTracker />
+          </Suspense>
+          {children}
+        </Providers>
       </body>
     </html>
   );

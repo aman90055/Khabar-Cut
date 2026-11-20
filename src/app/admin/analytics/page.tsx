@@ -17,6 +17,7 @@ export default async function AnalyticsPage() {
     getSiteSummary({ from: fromDate, to: toDate }).catch(() => ({
       totalViews: 0,
       uniqueVisitors: 0,
+      activeNow: 1,
       deviceBreakdown: [],
       locationBreakdown: [],
     })),
@@ -40,7 +41,7 @@ export default async function AnalyticsPage() {
       </div>
 
       {/* Overview stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-6 flex items-center justify-between">
             <div className="space-y-1.5">
@@ -68,13 +69,19 @@ export default async function AnalyticsPage() {
         <Card>
           <CardContent className="p-6 flex items-center justify-between">
             <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Top Device Type</span>
-              <p className="text-2xl font-black text-zinc-900 dark:text-zinc-50 capitalize">
-                {summary.deviceBreakdown[0]?.deviceType || 'Mobile'}
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Live Readers</span>
+              </div>
+              <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
+                {(summary as any).activeNow || 1}
               </p>
             </div>
-            <div className="p-3 bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 rounded-xl">
-              <Smartphone className="h-5 w-5" />
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-xl">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
@@ -82,13 +89,13 @@ export default async function AnalyticsPage() {
         <Card>
           <CardContent className="p-6 flex items-center justify-between">
             <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Top Country</span>
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Top Device</span>
               <p className="text-2xl font-black text-zinc-900 dark:text-zinc-50 capitalize">
-                {summary.locationBreakdown[0]?.country || 'India'}
+                {summary.deviceBreakdown[0]?.deviceType || 'Mobile'}
               </p>
             </div>
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-xl">
-              <Globe className="h-5 w-5" />
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/20 text-purple-600 dark:text-purple-400 rounded-xl">
+              <Smartphone className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>

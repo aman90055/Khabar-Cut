@@ -8,22 +8,32 @@ export async function POST(request: Request) {
       articleId?: string;
       referrer?: string;
       sessionId?: string;
+      deviceType?: string;
     };
 
     const forwarded = request.headers.get('x-forwarded-for');
-    const ipAddress = (forwarded ? forwarded.split(',')[0] : '127.0.0.1').trim();
+    const cfIp = request.headers.get('cf-connecting-ip');
+    const realIp = request.headers.get('x-real-ip');
+    const ipAddress = (cfIp || (forwarded ? forwarded.split(',')[0] : realIp) || '127.0.0.1').trim();
     const userAgent = request.headers.get('user-agent') ?? undefined;
 
+    // Geographic detection from Edge CDN headers (Vercel / Cloudflare)
+    const country = request.headers.get('x-vercel-ip-country') || request.headers.get('cf-ipcountry') || 'India';
+    const region = request.headers.get('x-vercel-ip-country-region') || undefined;
+
     await AnalyticsService.trackPageView({
-      pagePath: body.pagePath,
+      pagePath: body.pagePath || '/',
       articleId: body.articleId,
       referrer: body.referrer,
       sessionId: body.sessionId,
       ipAddress,
       userAgent,
+      country,
+      region,
+      deviceType: body.deviceType,
     });
-  } catch {
-    // Analytics must never break the user experience — swallow all errors silently
+  } catch (err: any) {
+    console.error('[Analytics Track Error]:', err?.message);
   }
 
   return NextResponse.json({ success: true });

@@ -41,7 +41,7 @@ export async function trackPageView(input: TrackEventInput) {
 
   revalidateTag(CACHE_TAGS.ANALYTICS);
 
-  return { success: true, data: { id: event.id } };
+  return { success: true, data: { id: event?.id || '' } };
 }
 
 export async function getAnalyticsSummary(filters?: AnalyticsFilters) {
