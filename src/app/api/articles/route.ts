@@ -73,14 +73,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
     }
 
-    // Auto-generate slug from Hindi/English title
-    const articleSlug = slug ||
-      title
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/(^-|-$)/g, '')
-        .substring(0, 100);
+    // Auto-generate slug from Hindi/English title (supports Unicode characters)
+    const generatedSlug = title
+      .toLowerCase()
+      .trim()
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .replace(/\s+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .substring(0, 100);
+
+    const articleSlug = slug || generatedSlug || `news-${Date.now()}`;
 
     const articleStatus = status || 'draft';
 

@@ -177,13 +177,16 @@ export async function getArticlesByState(
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from('article_locations')
-    .select(`article:articles!article_id (${ARTICLE_LIST_SELECT})`)
+    .from('articles')
+    .select(ARTICLE_LIST_SELECT)
+    .eq('status', 'PUBLISHED')
+    .eq('visibility', 'PUBLIC')
     .eq('state_id', stateId)
+    .order('published_at', { ascending: false })
     .limit(limit);
 
   if (error || !data) return [];
-  return data.map((d: any) => d.article).filter(Boolean) as unknown as ArticleListItem[];
+  return data as unknown as ArticleListItem[];
 }
 
 // ── Search articles ───────────────────────────────────────────
@@ -219,12 +222,12 @@ export async function getArticlesByStateSlug(
     .eq('slug', stateSlug)
     .single();
   if (!state) return [];
-  // articles with state tag via article_locations if exists, else fallback to category match
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_LIST_SELECT)
     .eq('status', 'PUBLISHED')
     .eq('visibility', 'PUBLIC')
+    .eq('state_id', state.id)
     .order('published_at', { ascending: false })
     .limit(limit);
   if (error) return [];
@@ -237,11 +240,18 @@ export async function getArticlesByDistrictSlug(
   limit = 10
 ): Promise<ArticleListItem[]> {
   const supabase = await createClient();
+  const { data: district } = await supabase
+    .from('districts')
+    .select('id')
+    .eq('slug', districtSlug)
+    .single();
+  if (!district) return [];
   const { data, error } = await supabase
     .from('articles')
     .select(ARTICLE_LIST_SELECT)
     .eq('status', 'PUBLISHED')
     .eq('visibility', 'PUBLIC')
+    .eq('district_id', district.id)
     .order('published_at', { ascending: false })
     .limit(limit);
   if (error) return [];

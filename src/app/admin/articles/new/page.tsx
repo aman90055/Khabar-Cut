@@ -15,12 +15,14 @@ import { RichTextEditor } from '@/components/editor/rich-text-editor';
 interface Category { id: string; name: string; slug: string; }
 
 function slugify(text: string) {
-  return text
+  const cleaned = text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .replace(/\s+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 100);
+  return cleaned || `news-${Date.now()}`;
 }
 
 export default function NewArticlePage() {

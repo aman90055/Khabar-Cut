@@ -17,19 +17,20 @@ export async function PATCH(
     const updateData: Record<string, unknown> = {};
 
     if (body.status) {
-      updateData.status = body.status;
-      if (body.status === 'PUBLISHED') {
+      updateData.status = body.status.toUpperCase();
+      if (body.status.toUpperCase() === 'PUBLISHED') {
         updateData.published_at = new Date().toISOString();
       }
     }
     if (body.title !== undefined) updateData.title = body.title;
+    if (body.slug !== undefined) updateData.slug = body.slug;
     if (body.excerpt !== undefined) updateData.excerpt = body.excerpt;
     if (body.content !== undefined) updateData.content = body.content;
     if (body.category_id !== undefined) updateData.category_id = body.category_id;
-    if (body.meta_title !== undefined) updateData.meta_title = body.meta_title;
-    if (body.meta_description !== undefined) updateData.meta_description = body.meta_description;
+    if (body.featured_image_id !== undefined) updateData.featured_image_id = body.featured_image_id;
     if (body.is_featured !== undefined) updateData.is_featured = body.is_featured;
     if (body.is_breaking !== undefined) updateData.is_breaking = body.is_breaking;
+    updateData.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('articles')
@@ -60,9 +61,10 @@ export async function GET(
       .from('articles')
       .select(`
         id, title, slug, excerpt, content, status, published_at, created_at,
-        view_count, is_featured, is_breaking, meta_title, meta_description,
-        categories:category_id ( id, name, slug ),
-        author:author_id ( id, full_name, email )
+        view_count, is_featured, is_breaking,
+        category:categories!category_id ( id, name, slug ),
+        author:users!author_id ( id, full_name, email ),
+        featured_image:media!featured_image_id ( id, url, alt_text )
       `)
       .eq('id', id)
       .is('deleted_at', null)
